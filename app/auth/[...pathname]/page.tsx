@@ -9,7 +9,8 @@
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Eye, EyeOff, Mail, Lock, User, Shield, Stethoscope, Heart } from "lucide-react";
-import { authClient } from "@/lib/neon-auth";
+import { authClient } from "@/lib/supabase-auth";
+import { toast } from "sonner";
 
 export default function AuthPage() {
   const params = useParams();
@@ -124,10 +125,19 @@ export default function AuthPage() {
     setSuccess("");
 
     try {
-      const authUrl = process.env.NEXT_PUBLIC_NEON_AUTH_URL || "";
-      const redirectUri = `${window.location.origin}/auth/sign-in`;
-      const oauthUrl = `${authUrl}/oauth/google?redirect_uri=${encodeURIComponent(redirectUri)}`;
-      window.location.href = oauthUrl;
+      const { createClient } = await import("@/utils/supabase/client");
+      const supabase = createClient();
+      const redirectUri = `${window.location.origin}/auth/callback`;
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: redirectUri,
+          queryParams: {
+            prompt: "select_account",
+          },
+        },
+      });
+      if (error) throw error;
     } catch (err: any) {
       console.error("Google OAuth error:", err);
       setError(err.message || "Failed to sign in with Google. Please try again.");
@@ -150,6 +160,7 @@ export default function AuthPage() {
       const user = result?.data?.user || result?.user || null;
       
       if (user?.id) {
+        document.cookie = `supabase-auth-user-id=${user.id}; path=/; max-age=86400; SameSite=Lax`;
         document.cookie = `neon-auth-user-id=${user.id}; path=/; max-age=86400; SameSite=Lax`;
         
         try {
@@ -166,16 +177,20 @@ export default function AuthPage() {
           console.error("User sync error:", syncError);
         }
 
+        toast.success("Welcome back!", {
+          description: "Signed in successfully.",
+        });
         setSuccess("Sign in successful! Redirecting...");
         setTimeout(() => {
-          router.push("/dashboard");
-          router.refresh();
+          window.location.href = "/dashboard";
         }, 500);
       } else {
+        toast.error("Invalid credentials. Please try again.");
         setError("Invalid credentials. Please try again.");
       }
     } catch (err: any) {
       console.error("Sign in error:", err);
+      toast.error(err.message || "Failed to sign in. Please check your credentials.");
       setError(err.message || "Failed to sign in. Please check your credentials.");
     } finally {
       setLoading(false);
@@ -193,11 +208,13 @@ export default function AuthPage() {
         email,
         password,
         name,
+        role,
       });
 
       const user = result?.data?.user || result?.user || null;
       
       if (user?.id) {
+        document.cookie = `supabase-auth-user-id=${user.id}; path=/; max-age=86400; SameSite=Lax`;
         document.cookie = `neon-auth-user-id=${user.id}; path=/; max-age=86400; SameSite=Lax`;
         
         // Sync user to database with selected role
@@ -225,16 +242,21 @@ export default function AuthPage() {
           return;
         }
 
+        toast.success("Account created successfully!", {
+          description: "Please check your email inbox to confirm your account.",
+          duration: 6000,
+        });
         setSuccess("Account created successfully! Redirecting...");
         setTimeout(() => {
-          router.push("/dashboard");
-          router.refresh();
-        }, 500);
+          window.location.href = "/dashboard";
+        }, 1000);
       } else {
+        toast.error("Failed to create account. Please try again.");
         setError("Failed to create account. Please try again.");
       }
     } catch (err: any) {
       console.error("Sign up error:", err);
+      toast.error(err.message || "Failed to sign up. Please try again.");
       setError(err.message || "Failed to sign up. Please try again.");
     } finally {
       setLoading(false);

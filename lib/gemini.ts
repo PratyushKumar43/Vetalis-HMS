@@ -1,33 +1,42 @@
 /**
- * Google Gemini AI Integration
+ * Universal AI Integration Module
  * 
- * Configuration and helper functions for Google Gemini AI
+ * Supports Google Gemini API & Any OpenAI-Compatible Endpoint (e.g. OpenCode Zen, OpenRouter, Custom Proxies)
+ * with strict medical guardrails.
  */
 
-import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize Gemini AI client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+export function getAiApiKey(): string {
+  return (
+    process.env.AI_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_AI_API_KEY ||
+    ""
+  );
+}
 
-// Model configuration
-export const GEMINI_MODEL = "gemini-3-pro-preview";
+export function getAiModelName(): string {
+  return (
+    process.env.AI_MODEL_NAME ||
+    process.env.OPENAI_MODEL_NAME ||
+    process.env.GEMINI_MODEL_NAME ||
+    "mimo-v2.5-free"
+  );
+}
 
-/**
- * Get Gemini model instance
- */
-export function getGeminiModel() {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not set in environment variables");
-  }
-  return genAI.getGenerativeModel({ model: GEMINI_MODEL });
+export function getAiBaseUrl(): string {
+  return (
+    process.env.AI_BASE_URL ||
+    process.env.OPENAI_BASE_URL ||
+    process.env.GEMINI_BASE_URL ||
+    ""
+  );
 }
 
 /**
- * Generate text using Gemini AI
- * 
- * @param prompt - The prompt to send to Gemini
- * @param options - Additional options for generation
- * @returns Generated text response
+ * Universal Text Generation function
  */
 export async function generateText(
   prompt: string,
@@ -36,12 +45,66 @@ export async function generateText(
     maxTokens?: number;
     systemInstruction?: string;
   }
-) {
+): Promise<string> {
+  const apiKey = getAiApiKey();
+  const modelName = getAiModelName();
+  const baseUrl = getAiBaseUrl();
+
+  if (!apiKey) {
+    throw new Error("AI_API_KEY is not configured in environment variables.");
+  }
+
+  // Custom OpenAI-compatible Endpoint (e.g. OpenCode Zen https://opencode.ai/zen/v1)
+  if (baseUrl && (baseUrl.includes("http://") || baseUrl.includes("https://"))) {
+    let endpoint = baseUrl.trim();
+    if (!endpoint.endsWith("/chat/completions")) {
+      endpoint = endpoint.replace(/\/+$/, "") + "/chat/completions";
+    }
+
+    const messages: Array<{ role: string; content: string }> = [];
+
+    if (options?.systemInstruction) {
+      messages.push({ role: "system", content: options.systemInstruction });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    const requestBody = {
+      model: modelName,
+      messages,
+      temperature: options?.temperature ?? 0.3,
+      max_tokens: options?.maxTokens ?? 2048,
+    };
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`AI Endpoint Error (${res.status}):`, errText);
+      throw new Error(`AI Provider API Error (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("No content returned from AI provider endpoint.");
+    }
+    return content;
+  }
+
+  // Native Google Gemini SDK fallback
   try {
-    const model = getGeminiModel();
-    
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
     const generationConfig = {
-      temperature: options?.temperature ?? 0.7,
+      temperature: options?.temperature ?? 0.3,
       maxOutputTokens: options?.maxTokens ?? 2048,
     };
 
@@ -58,147 +121,123 @@ export async function generateText(
     const response = await result.response;
     return response.text();
   } catch (error: any) {
-    console.error("Error generating text with Gemini:", error);
-    throw new Error(`Gemini AI error: ${error.message || "Unknown error"}`);
+    console.error("Native Gemini SDK Error:", error);
+    throw new Error(`AI Generation Error: ${error.message || "Unknown error"}`);
   }
 }
 
 /**
- * Generate prescription suggestions using Gemini AI
- * 
- * @param symptoms - Patient symptoms
- * @param diagnosis - Doctor's diagnosis
- * @param patientHistory - Patient medical history (optional)
- * @returns AI-generated prescription suggestions
+ * Generate prescription suggestions using AI
  */
 export async function generatePrescriptionSuggestions(
   symptoms: string,
   diagnosis: string,
   patientHistory?: string
 ) {
-  const systemInstruction = `You are a medical AI assistant helping doctors create prescriptions. 
-Provide medication suggestions based on symptoms, diagnosis, and patient history.
-Always include: medication name, dosage, frequency, and duration.
-Consider drug interactions and patient allergies.
-Format your response as JSON array of medication objects with: name, dosage, frequency, duration, reason.`;
+  const systemInstruction = `You are an expert clinical pharmacy AI assistant helping doctors create prescriptions.
+Provide medication suggestions based strictly on symptoms, diagnosis, and patient history.
+Always include: medication name, dosage, frequency, duration, and rationale.
+Consider drug interactions, contraindications, and patient allergies.
+Format your response as a valid JSON array of medication objects.`;
 
-  const prompt = `Based on the following information, suggest appropriate medications:
+  const prompt = `Based on the following patient clinical information, suggest appropriate medications:
 
 Symptoms: ${symptoms}
 Diagnosis: ${diagnosis}
 ${patientHistory ? `Patient History: ${patientHistory}` : ""}
 
-Provide medication suggestions in JSON format:
+Return valid JSON format array:
 [
   {
     "name": "Medication Name",
     "dosage": "Dosage",
     "frequency": "Frequency",
     "duration": "Duration",
-    "reason": "Reason for prescription"
+    "reason": "Clinical rationale"
   }
 ]`;
 
-  try {
-    const response = await generateText(prompt, {
-      temperature: 0.3, // Lower temperature for more consistent medical responses
-      systemInstruction,
-    });
+  const response = await generateText(prompt, {
+    temperature: 0.2,
+    systemInstruction,
+  });
 
-    // Try to parse JSON from response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-
-    // Fallback: return structured response
-    return [{ name: "AI Suggestion", dosage: "As prescribed", frequency: "As needed", duration: "As directed", reason: response }];
-  } catch (error: any) {
-    console.error("Error generating prescription suggestions:", error);
-    throw error;
+  const jsonMatch = response.match(/\[[\s\S]*\]/);
+  if (jsonMatch) {
+    return JSON.parse(jsonMatch[0]);
   }
+
+  throw new Error(`Failed to parse AI prescription suggestions: ${response}`);
 }
 
 /**
- * Analyze medical report using Gemini AI
- * 
- * @param reportText - Extracted text from medical report
- * @param reportType - Type of report (lab, imaging, pathology, other)
- * @returns AI analysis of the report
+ * Analyze medical report using AI
  */
 export async function analyzeMedicalReport(
   reportText: string,
   reportType: string
 ) {
-  const systemInstruction = `You are a medical AI assistant analyzing medical reports.
+  const systemInstruction = `You are a medical diagnostics AI assistant analyzing lab and imaging reports.
 Analyze the report for:
-1. Key findings and abnormalities
-2. Normal ranges and values
-3. Potential concerns or red flags
-4. Recommendations for follow-up
+1. Key clinical findings and abnormalities
+2. Reference ranges and lab values
+3. Potential health concerns or alerts
+4. Recommended medical follow-ups
 
-Provide a structured analysis in JSON format.`;
+Return a valid JSON object format.`;
 
-  const prompt = `Analyze the following ${reportType} report:
+  const prompt = `Analyze the following ${reportType} report text:
 
 ${reportText}
 
-Provide analysis in JSON format:
+Return valid JSON format:
 {
-  "summary": "Brief summary",
+  "summary": "Clinical summary",
   "findings": ["Finding 1", "Finding 2"],
   "abnormalities": ["Abnormality 1", "Abnormality 2"],
   "recommendations": ["Recommendation 1", "Recommendation 2"],
   "confidence": 0.95
 }`;
 
-  try {
-    const response = await generateText(prompt, {
-      temperature: 0.2, // Very low temperature for accurate medical analysis
-      systemInstruction,
-    });
+  const response = await generateText(prompt, {
+    temperature: 0.1,
+    systemInstruction,
+  });
 
-    // Try to parse JSON from response
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-
-    // Fallback: return basic analysis
-    return {
-      summary: response,
-      findings: [],
-      abnormalities: [],
-      recommendations: [],
-      confidence: 0.8,
-    };
-  } catch (error: any) {
-    console.error("Error analyzing medical report:", error);
-    throw error;
+  const jsonMatch = response.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    return JSON.parse(jsonMatch[0]);
   }
+
+  throw new Error(`Failed to parse AI report analysis: ${response}`);
 }
 
 /**
- * Generate chatbot response using Gemini AI
- * 
- * @param message - User's message
- * @param conversationHistory - Previous messages in the conversation
- * @param userRole - User's role (patient, doctor, admin)
- * @returns AI-generated response
+ * Generate Chatbot Response with Strict Medical Guardrails
  */
 export async function generateChatbotResponse(
   message: string,
   conversationHistory: Array<{ role: string; content: string }> = [],
   userRole: string = "patient"
 ) {
-  const systemInstruction = `You are a medical AI assistant. 
-${userRole === "patient" 
-  ? "Provide general health information and answer medical questions. Always remind users to consult with their doctor for medical advice."
-  : "Provide detailed medical information and assistance to healthcare professionals."
-}
-Be accurate, helpful, and always emphasize the importance of professional medical consultation for serious concerns.`;
+  const MEDICAL_GUARDRAIL = `
+STRICT GUARDRAIL RULES:
+You are a specialized Healthcare and Medical AI Assistant ONLY.
+You MUST ONLY answer questions strictly related to healthcare, medicine, medical symptoms, clinical conditions, treatment guidelines, pharmacology, wellness, or medical diagnostic reports.
 
-  // Build conversation context
+IF THE USER ASKS ANY NON-MEDICAL QUESTION (such as programming, coding, mathematics, general trivia, history, sports, entertainment, politics, gaming, finance, etc.), YOU MUST DECLINE TO ANSWER AND RESPOND ONLY WITH THIS EXACT DISCLAIMER:
+"I am a specialized medical AI assistant. I can only assist with healthcare, medical conditions, wellness, and health-related topics. Please consult a qualified healthcare professional for medical advice."
+`;
+
+  const systemInstruction = `${MEDICAL_GUARDRAIL}
+
+${
+  userRole === "patient"
+    ? "Provide helpful, clear medical information and health guidance. Emphasize that users should consult their doctor for official diagnoses."
+    : "Provide detailed medical information and clinical assistance for healthcare professionals."
+}
+`;
+
   const conversationContext = conversationHistory
     .map((msg) => `${msg.role}: ${msg.content}`)
     .join("\n");
@@ -207,16 +246,13 @@ Be accurate, helpful, and always emphasize the importance of professional medica
     ? `${conversationContext}\nuser: ${message}\nassistant:`
     : `user: ${message}\nassistant:`;
 
-  try {
-    const response = await generateText(prompt, {
-      temperature: 0.7,
-      systemInstruction,
-    });
-
-    return response;
-  } catch (error: any) {
-    console.error("Error generating chatbot response:", error);
-    throw error;
-  }
+  return await generateText(prompt, {
+    temperature: 0.3,
+    systemInstruction,
+  });
 }
 
+// Backwards compatibility helper
+export function getGeminiModel() {
+  return null;
+}

@@ -13,17 +13,17 @@ import { Activity } from "lucide-react";
 
 export default function SignUpPage() {
   const router = useRouter();
-  const useNeonAuth = !!process.env.NEXT_PUBLIC_NEON_AUTH_URL;
+  const useAuth = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
 
   useEffect(() => {
-    // If Neon Auth is configured, redirect to Neon Auth sign-up
-    if (useNeonAuth) {
+    // If Supabase Auth is configured, redirect to Custom sign-up
+    if (useAuth) {
       router.push("/auth/sign-up");
     }
-  }, [useNeonAuth, router]);
+  }, [useAuth, router]);
 
-  // If Neon Auth is not configured, show custom sign-up form
-  if (!useNeonAuth) {
+  // If Auth is not configured, show custom sign-up form
+  if (!useAuth) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-teal-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
@@ -45,7 +45,7 @@ export default function SignUpPage() {
               Custom sign-up form will be implemented here.
             </p>
             <p className="text-center text-sm text-slate-500">
-              Or configure Neon Auth to use their authentication system.
+              Or configure Supabase Auth to use their authentication system.
             </p>
             <div className="mt-6 text-center">
               <Link
@@ -61,6 +61,6 @@ export default function SignUpPage() {
     );
   }
 
-  return null; // Will redirect to Neon Auth
+  return null; // Will redirect to Auth
 }
 

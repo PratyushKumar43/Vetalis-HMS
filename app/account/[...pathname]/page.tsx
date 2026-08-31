@@ -8,7 +8,7 @@
 
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
-import { authClient } from "@/lib/neon-auth";
+import { authClient } from "@/lib/supabase-auth";
 
 export default function AccountPage() {
   const params = useParams();

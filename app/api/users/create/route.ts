@@ -3,13 +3,12 @@
  * 
  * POST /api/users/create
  * 
- * Allows admins to create user accounts with specific roles.
- * Creates user in database. User must sign up with Neon Auth using the same email.
+ * Allows admins to create user accounts with specific roles in Supabase.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/lib/neon-auth-server";
-import { sql } from "@/lib/db";
+import { getUser } from "@/lib/supabase-auth-server";
+import { supabase } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,47 +47,49 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if email already exists
-    const existingUser = await sql`
-      SELECT id FROM users WHERE email = ${email}
-    `;
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .single();
 
-    if (existingUser.length > 0) {
+    if (existingUser) {
       return NextResponse.json(
         { error: "User with this email already exists" },
         { status: 400 }
       );
     }
 
-    // Generate a temporary UUID for the user
-    // This will be updated when they sign up with Neon Auth
     const tempUserId = crypto.randomUUID();
 
     try {
-      // Create user in database with a placeholder ID
-      // When user signs up with Neon Auth, the sync-user endpoint will update this
-      await sql`
-        INSERT INTO users (id, email, name, phone, role, created_at, updated_at)
-        VALUES (${tempUserId}::uuid, ${email}, ${name}, ${phone || null}, ${role}, NOW(), NOW())
-      `;
+      const { error: insertError } = await supabase.from("users").insert({
+        id: tempUserId,
+        email,
+        name,
+        phone: phone || null,
+        role,
+      });
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
 
       // Create role-specific records
       if (role === "doctor") {
-        await sql`
-          INSERT INTO doctors (id, verified, created_at)
-          VALUES (${tempUserId}::uuid, false, NOW())
-          ON CONFLICT (id) DO NOTHING
-        `;
+        await supabase.from("doctors").upsert({
+          id: tempUserId,
+          verified: false,
+        });
       } else if (role === "patient") {
-        await sql`
-          INSERT INTO patients (id, created_at, updated_at)
-          VALUES (${tempUserId}::uuid, NOW(), NOW())
-          ON CONFLICT (id) DO NOTHING
-        `;
+        await supabase.from("patients").upsert({
+          id: tempUserId,
+        });
       }
 
       return NextResponse.json({
         success: true,
-        message: `User account created with ${role} role. User must sign up at /auth/sign-up using email: ${email}. The role will be automatically assigned.`,
+        message: `User account created with ${role} role. User can now sign up using email: ${email}.`,
         user: {
           id: tempUserId,
           email,

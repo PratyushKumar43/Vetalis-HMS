@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { getAllPatients, getPatientsByDoctor } from "@/lib/db-helpers";
 import { sql } from "@/lib/db";
 
@@ -34,19 +34,33 @@ export async function GET(request: NextRequest) {
           u.email, 
           u.phone, 
           u.created_at
-        FROM patients p
-        JOIN users u ON p.id = u.id
-        WHERE p.id = ${user.id}::uuid
+        FROM users u
+        LEFT JOIN patients p ON p.id = u.id
+        WHERE u.id = ${user.id}::uuid
       `;
       patients = patient;
-    }
-    // Doctors see all patients (they can manage any patient)
-    else if (userRole === "doctor") {
-      patients = await getPatientsByDoctor(user.id);
-    }
-    // Admins see all patients
-    else {
-      patients = await getAllPatients(limit, offset);
+    } else {
+      // Doctors and Admins see ALL signed up patients
+      const allPatients = await sql`
+        SELECT 
+          u.id,
+          u.name,
+          u.email,
+          u.phone,
+          u.role,
+          u.created_at,
+          p.date_of_birth,
+          p.gender,
+          p.blood_type,
+          p.emergency_contact,
+          p.medical_history,
+          p.allergies
+        FROM users u
+        LEFT JOIN patients p ON p.id = u.id
+        WHERE u.role = 'patient' OR p.id IS NOT NULL
+        ORDER BY u.created_at DESC
+      `;
+      patients = allPatients;
     }
 
     // Apply search filter if provided

@@ -1,14 +1,15 @@
 /**
- * Middleware for Route Protection
- * 
- * Protects dashboard routes and enforces role-based access
+ * Middleware for Route Protection (Supabase integrated)
  */
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { sql } from "@/lib/db";
+import { supabase } from "@/lib/db";
+import { updateSession } from "@/utils/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  const { supabaseResponse, user } = await updateSession(request);
+
   // Public routes
   const publicRoutes = ["/", "/login", "/signup"];
   const isPublicRoute = publicRoutes.some((route) =>
@@ -18,13 +19,13 @@ export async function middleware(request: NextRequest) {
   );
 
   if (isPublicRoute) {
-    return NextResponse.next();
+    return supabaseResponse;
   }
+
+  const userId = user?.id;
 
   // Protect dashboard routes
   if (request.nextUrl.pathname.startsWith("/dashboard")) {
-    const userId = request.cookies.get("neon-auth-user-id")?.value;
-    
     if (!userId) {
       return NextResponse.redirect(new URL("/auth/sign-in", request.url));
     }
@@ -32,11 +33,13 @@ export async function middleware(request: NextRequest) {
     // Check user role from database for admin routes
     if (request.nextUrl.pathname.startsWith("/dashboard/admin")) {
       try {
-        const user = await sql`
-          SELECT role FROM users WHERE id = ${userId}::uuid
-        `;
+        const { data: user } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", userId)
+          .single();
         
-        if (user.length === 0 || user[0].role !== "admin") {
+        if (!user || user.role !== "admin") {
           return NextResponse.redirect(new URL("/dashboard", request.url));
         }
       } catch (error) {
@@ -49,8 +52,6 @@ export async function middleware(request: NextRequest) {
   // Protect API routes (except auth endpoints)
   if (request.nextUrl.pathname.startsWith("/api") && 
       !request.nextUrl.pathname.startsWith("/api/auth")) {
-    const userId = request.cookies.get("neon-auth-user-id")?.value;
-    
     if (!userId) {
       return NextResponse.json(
         { error: "Unauthorized" },
@@ -59,7 +60,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Calendar, Phone, Mail, MapPin, Heart, Activity, FileText, Pill, TrendingUp, Loader2 } from "lucide-react";
+import { Calendar, Phone, Mail, MapPin, Heart, Activity, FileText, Pill, TrendingUp, Loader2, Sparkles, Plus, X } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface PatientDetailProps {
@@ -15,6 +15,18 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
   const [patient, setPatient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [vitalsForm, setVitalsForm] = useState({
+    heartRate: "",
+    bloodPressureSystolic: "",
+    bloodPressureDiastolic: "",
+    temperature: "",
+    oxygenSaturation: "",
+    weight: "",
+    notes: "",
+  });
+  const [vitalsLoading, setVitalsLoading] = useState(false);
 
   useEffect(() => {
     fetchPatientData();
@@ -36,6 +48,40 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
       setError("Failed to load patient data");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveVitals = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVitalsLoading(true);
+    try {
+      const res = await fetch("/api/vitals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId,
+          ...vitalsForm,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to record vitals");
+      }
+      setShowVitalsModal(false);
+      setVitalsForm({
+        heartRate: "",
+        bloodPressureSystolic: "",
+        bloodPressureDiastolic: "",
+        temperature: "",
+        oxygenSaturation: "",
+        weight: "",
+        notes: "",
+      });
+      fetchPatientData();
+    } catch (err: any) {
+      alert(err.message || "Failed to record vitals");
+    } finally {
+      setVitalsLoading(false);
     }
   };
 
@@ -72,23 +118,51 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
   return (
     <div className="space-y-6">
       {/* Patient Info Card */}
-      <div className="bg-white rounded-lg border border-slate-200 p-6">
-        <div className="flex items-start justify-between mb-6">
+      <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-2xl font-semibold">
               {patient.name?.charAt(0) || "?"}
             </div>
             <div>
-              <h2 className="text-2xl font-semibold text-slate-900 mb-1">{patient.name || "Unknown"}</h2>
-              <p className="text-slate-600">Patient ID: {patient.id}</p>
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-semibold text-slate-900">{patient.name || "Unknown"}</h2>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                  Active
+                </span>
+              </div>
+              <p className="text-slate-600 text-sm mt-0.5">Patient ID: {patient.id}</p>
             </div>
           </div>
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-            Active
-          </span>
+
+          {userRole !== "patient" && (
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              <button
+                onClick={() => setShowVitalsModal(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm"
+              >
+                <Heart className="w-4 h-4" />
+                Record Vitals
+              </button>
+              <Link
+                href={`/dashboard/prescriptions/new?patientId=${patientId}&mode=ai`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 transition-colors shadow-sm"
+              >
+                <Sparkles className="w-4 h-4" />
+                AI Prescription
+              </Link>
+              <Link
+                href={`/dashboard/prescriptions/new?patientId=${patientId}`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Pill className="w-4 h-4" />
+                Manual Prescription
+              </Link>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4 border-t border-slate-100">
           <div className="flex items-center gap-3">
             <Mail className="w-5 h-5 text-slate-400" />
             <div>
@@ -123,6 +197,115 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
           </div>
         </div>
       </div>
+
+      {/* Doctor Record Vitals Modal */}
+      {showVitalsModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                <Heart className="w-5 h-5 text-teal-600" />
+                Record Vitals for {patient.name}
+              </h3>
+              <button onClick={() => setShowVitalsModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveVitals} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Heart Rate (bpm)</label>
+                  <input
+                    type="number"
+                    value={vitalsForm.heartRate}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, heartRate: e.target.value })}
+                    placeholder="e.g. 72"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Temperature (°F)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={vitalsForm.temperature}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, temperature: e.target.value })}
+                    placeholder="e.g. 98.6"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Systolic BP (mmHg)</label>
+                  <input
+                    type="number"
+                    value={vitalsForm.bloodPressureSystolic}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, bloodPressureSystolic: e.target.value })}
+                    placeholder="e.g. 120"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Diastolic BP (mmHg)</label>
+                  <input
+                    type="number"
+                    value={vitalsForm.bloodPressureDiastolic}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, bloodPressureDiastolic: e.target.value })}
+                    placeholder="e.g. 80"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">O2 Saturation (%)</label>
+                  <input
+                    type="number"
+                    value={vitalsForm.oxygenSaturation}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, oxygenSaturation: e.target.value })}
+                    placeholder="e.g. 98"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={vitalsForm.weight}
+                    onChange={(e) => setVitalsForm({ ...vitalsForm, weight: e.target.value })}
+                    placeholder="e.g. 70"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
+                <textarea
+                  value={vitalsForm.notes}
+                  onChange={(e) => setVitalsForm({ ...vitalsForm, notes: e.target.value })}
+                  placeholder="Clinical notes or observations..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={vitalsLoading}
+                  className="flex-1 bg-teal-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
+                >
+                  {vitalsLoading ? "Saving..." : "Save Vitals Record"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowVitalsModal(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white rounded-lg border border-slate-200">
@@ -165,50 +348,10 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
                 </div>
               )}
 
-              {/* Allergies */}
-              {patient.allergies && Array.isArray(patient.allergies) && patient.allergies.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Allergies</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {patient.allergies.map((allergy: string, index: number) => (
-                      <span
-                        key={index}
-                        className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium"
-                      >
-                        {allergy}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Current Medications */}
-              {patient.currentMedications && patient.currentMedications.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Current Medications</h3>
-                  <div className="space-y-3">
-                    {patient.currentMedications.map((med: any, index: number) => (
-                      <div key={index} className="bg-slate-50 rounded-lg p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-slate-900">
-                              {Array.isArray(med.medications)
-                                ? med.medications.map((m: any) => m.name || m).join(", ")
-                                : "Medication"}
-                            </p>
-                            {med.doctor && <p className="text-sm text-slate-600">Dr. {med.doctor}</p>}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Last Vitals */}
-              {patient.lastVitals && (
+              {patient.lastVitals ? (
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Last Vitals</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Latest Vitals Record</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {patient.lastVitals.temperature && (
                       <div className="bg-slate-50 rounded-lg p-4">
@@ -238,40 +381,17 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
                     )}
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === "history" && (
-            <div className="space-y-4">
-              {patient.medicalHistory && patient.medicalHistory.length > 0 ? (
-                patient.medicalHistory.map((record: any, index: number) => (
-                  <div key={index} className="border-l-4 border-teal-500 pl-4 py-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-medium text-slate-900">{record.diagnosis || "Visit"}</p>
-                      <span className="text-sm text-slate-500">
-                        {new Date(record.visit_date).toLocaleDateString()}
-                      </span>
-                    </div>
-                    {record.doctor_name && <p className="text-sm text-slate-600">Dr. {record.doctor_name}</p>}
-                    {record.notes && <p className="text-sm text-slate-500 mt-1">{record.notes}</p>}
-                  </div>
-                ))
               ) : (
-                <p className="text-slate-500">No medical history available</p>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Latest Vitals Record</h3>
+                  <p className="text-slate-500 text-sm">No vitals recorded yet.</p>
+                </div>
               )}
             </div>
           )}
 
           {activeTab === "vitals" && (
             <div>
-              <Link
-                href={`/dashboard/vitals?patientId=${patientId}`}
-                className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-medium mb-4"
-              >
-                <TrendingUp className="w-4 h-4" />
-                View Full Vitals History
-              </Link>
               {patient.lastVitals ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-slate-50 rounded-lg p-4">
@@ -316,7 +436,7 @@ export default function PatientDetail({ patientId, userRole }: PatientDetailProp
                 <FileText className="w-4 h-4" />
                 View All Reports
               </Link>
-              <p className="text-slate-600">Medical reports will be displayed here.</p>
+              <p className="text-slate-600">Medical reports for this patient.</p>
             </div>
           )}
 

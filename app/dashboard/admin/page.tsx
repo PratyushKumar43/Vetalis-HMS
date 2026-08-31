@@ -4,7 +4,7 @@
  * System administration, user management, and analytics
  */
 
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
 import { Shield, Users, TrendingUp, FileText, Settings, Activity } from "lucide-react";
 import AdminPanel from "@/components/dashboard/AdminPanel";

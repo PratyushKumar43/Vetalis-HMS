@@ -4,7 +4,7 @@
  * Overview dashboard with stats and quick actions
  */
 
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
 import { Users, FileText, Pill, Activity, TrendingUp, Clock } from "lucide-react";
 import Link from "next/link";
@@ -27,7 +27,6 @@ export default async function DashboardPage() {
       { label: "Manage Users", href: "/dashboard/admin", icon: Users },
     ],
     doctor: [
-      { label: "Add Patient", href: "/dashboard/patients/new", icon: Users },
       { label: "New Prescription", href: "/dashboard/prescriptions/new", icon: Pill },
       { label: "Upload Report", href: "/dashboard/reports/upload", icon: FileText },
     ],

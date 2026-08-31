@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { getPatientById } from "@/lib/db-helpers";
 import { sql } from "@/lib/db";
 

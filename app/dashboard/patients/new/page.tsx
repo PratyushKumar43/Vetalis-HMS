@@ -4,7 +4,7 @@
  * Create a new patient account manually (for doctors and admins)
  */
 
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -17,9 +17,9 @@ export default async function NewPatientPage() {
     redirect("/auth/sign-in");
   }
 
-  // Check permissions - only doctors and admins can create patients
+  // Check permissions - only admins can manually create patients
   const userRole = (user.role as string) || "patient";
-  if (userRole === "patient") {
+  if (userRole !== "admin") {
     redirect("/dashboard/patients");
   }
 

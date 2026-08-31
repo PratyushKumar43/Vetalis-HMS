@@ -15,7 +15,7 @@ import {
   X,
   Shield,
 } from "lucide-react";
-import { authClient } from "@/lib/neon-auth";
+import { authClient } from "@/lib/supabase-auth";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface SidebarProps {
@@ -46,7 +46,6 @@ const menuItems = {
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
     { icon: FileText, label: "My Reports", href: "/dashboard/reports" },
     { icon: Pill, label: "My Prescriptions", href: "/dashboard/prescriptions" },
-    { icon: Activity, label: "My Vitals", href: "/dashboard/vitals" },
     { icon: MessageSquare, label: "Chatbot", href: "/dashboard/chatbot" },
   ],
 };
@@ -69,12 +68,13 @@ export default function Sidebar({ userRole, userName, userEmail }: SidebarProps)
   const handleSignOut = async () => {
     try {
       await authClient.signOut();
-      // Clear the user ID cookie
+      // Clear user ID cookies
+      document.cookie = "supabase-auth-user-id=; path=/; max-age=0";
       document.cookie = "neon-auth-user-id=; path=/; max-age=0";
       window.location.href = "/";
     } catch (error) {
       console.error("Sign out error:", error);
-      // Clear cookie anyway
+      document.cookie = "supabase-auth-user-id=; path=/; max-age=0";
       document.cookie = "neon-auth-user-id=; path=/; max-age=0";
       window.location.href = "/";
     }

@@ -34,16 +34,14 @@ A comprehensive healthcare management platform with AI-powered features, built w
 - **Fonts:** Inter (Google Fonts)
 
 ### Backend & Infrastructure
-- **Authentication:** Neon Auth
-- **Database:** Neon (PostgreSQL) - Direct SQL queries
-- **Cache/Session:** Redis (optional)
+- **Authentication:** Supabase Auth (Email & Google OAuth)
+- **Database:** Supabase PostgreSQL
+- **File Storage:** Supabase Storage (medical reports & documents)
 - **AI Model:** Google Gemini AI
-- **File Storage:** Cloudinary (images, PDFs, documents)
 
 ### Deployment
-- **Platform:** Vercel (recommended)
-- **Database:** Neon PostgreSQL
-- **Redis:** Upstash Redis or Redis Cloud
+- **Platform:** Vercel
+- **Backend Infrastructure:** Supabase Ecosystem
 
 ## Getting Started
 
@@ -201,112 +199,61 @@ For a complete list, see `/docs/README.md`.
 - **Patient** - View own records, vitals, reports, limited chatbot access
 
 ### Authentication Flow
-1. User signs up with email/password via Neon Auth
-2. Email verification (handled by Neon Auth)
-3. Role assignment during registration (stored in database)
-4. Login with Neon Auth
-5. Session managed by Neon Auth
-6. Role-based route protection via middleware
+1. User signs up with email/password or Google OAuth via Supabase Auth
+2. Email verification & session managed natively by Supabase (`@supabase/ssr`)
+3. Role assignment stored in `public.users` table
+4. Role-based route protection via Next.js middleware
 
 ## Environment Variables
 
-Create a `.env.local` file:
+Copy the provided `.env.example` to `.env.local` and configure your credentials:
+
+```bash
+cp .env.example .env.local
+```
+
+Required environment variables:
 
 ```env
-# Database
-DATABASE_URL="postgresql://user:password@neon-host/dbname"
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL="https://your-project-id.supabase.co"
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="your-supabase-publishable-key"
 
-# Redis
-REDIS_URL="redis://default:password@redis-host:port"
+# Storage Configuration (Optional)
+NEXT_PUBLIC_SUPABASE_STORAGE_URL="https://your-project-id.storage.supabase.co/storage/v1/s3"
+SUPABASE_STORAGE_REGION="ap-northeast-1"
 
-# Neon Auth
-NEXT_PUBLIC_NEON_AUTH_URL="https://your-neon-auth-url.neonauth.us-east-1.aws.neon.tech/neondb/auth"
+# Google OAuth Credentials
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+NEXT_PUBLIC_GOOGLE_CLIENT_ID="your-google-client-id"
 
-# Google Gemini AI
+# AI Provider Configuration (Google Gemini / OpenAI / OpenCode Zen)
+AI_BASE_URL="https://generativelanguage.googleapis.com/v1beta"
+AI_API_KEY="your-ai-api-key"
+AI_MODEL_NAME="gemini-1.5-flash"
 GEMINI_API_KEY="your-gemini-api-key"
 
-# OAuth (Google - Configure in Neon Auth Dashboard)
-# Note: Google OAuth is configured through Neon Auth dashboard, not via environment variables
-# You need to:
-# 1. Go to Neon Auth dashboard
-# 2. Enable Google OAuth provider
-# 3. Add your Google OAuth credentials there
-# The OAuth flow will work automatically once configured in Neon Auth
-
-# Cloudinary (File Storage)
-CLOUDINARY_CLOUD_NAME="your-cloud-name"
-CLOUDINARY_API_KEY="your-api-key"
-CLOUDINARY_API_SECRET="your-api-secret"
-CLOUDINARY_UPLOAD_PRESET="medical_reports" # Optional: for unsigned uploads
+# OCR Configuration (Optional for medical report extraction)
+OCR_SPACE_API_KEY="helloworld"
 ```
 
-## Database Setup
+## Database & Storage Setup
 
-1. Create a Neon PostgreSQL database
-2. Create tables directly in Neon using SQL (see `MIGRATION_TO_NEON_AUTH.md` for schema examples)
-3. No migrations needed - use raw SQL queries
-
-## Redis Setup
-
-1. Create a Redis instance (Upstash, Redis Cloud, or self-hosted)
-2. Update `REDIS_URL` in `.env.local`
-3. Test connection:
-```bash
-npm run redis:test
-```
+1. Create a Supabase project at [supabase.com](https://supabase.com)
+2. Run the migration SQL in your Supabase SQL Editor:
+   - File: `supabase/migrations/20260812000000_init_schema.sql`
+   - This sets up all tables (`users`, `patients`, `doctors`, `prescriptions`, `vitals`, `medical_reports`, `notifications`), triggers, and the `medical-reports` storage bucket.
+3. Configure Google OAuth in the Supabase Dashboard under Authentication > Providers (optional for social login).
 
 ## AI Integration Setup
 
-1. Get Google Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Add `GEMINI_API_KEY` to `.env.local`
-3. Test AI integration:
+1. Get an API key from [Google AI Studio](https://makersuite.google.com/app/apikey) or your preferred OpenAI-compatible provider
+2. Set `AI_API_KEY` (and optionally `AI_BASE_URL` / `AI_MODEL_NAME`) in `.env.local`
+3. Test features using:
 ```bash
-npm run test:ai
+node scripts/test-all-features.mjs
 ```
-
-## Cloudinary Setup
-
-1. Create a Cloudinary account at [cloudinary.com](https://cloudinary.com)
-2. Get your credentials from the Dashboard:
-   - Cloud Name
-   - API Key
-   - API Secret
-3. Add credentials to `.env.local`
-4. Create an upload preset (optional, for unsigned uploads):
-   - Go to Settings > Upload
-   - Create preset named `medical_reports`
-   - Set signing mode to "Signed"
-   - Set folder to `reports`
-   - Enable "Use filename" for better organization
-5. Install Cloudinary SDK:
-```bash
-npm install cloudinary
-# or
-npm install next-cloudinary  # For Next.js optimized uploads
-```
-6. Test Cloudinary connection:
-```bash
-npm run test:cloudinary
-```
-
-### Cloudinary Configuration for Medical Reports
-
-**Recommended Settings:**
-- **Resource Type:** `auto` (handles images and PDFs)
-- **Access Mode:** Private (signed URLs)
-- **Folder Structure:** `reports/{patientId}/{reportId}`
-- **Transformations:** 
-  - Auto-format (WebP for images)
-  - Quality: auto
-  - Secure delivery: enabled
-- **File Size Limit:** 10MB per file
-- **Allowed Formats:** PDF, JPG, PNG, JPEG
-
-**Security:**
-- Use signed uploads for server-side uploads
-- Generate signed URLs with expiration for file access
-- Enable access control on upload preset
-- Store only Cloudinary public_id in database, not full URLs
 
 ## Build for Production
 
@@ -324,26 +271,22 @@ npm start
 3. Add environment variables
 4. Deploy
 
-### Database & Redis
+### Production Environment Variables
 
-- **Neon:** Create database and get connection string
-- **Redis:** Use Upstash Redis (Vercel integration) or Redis Cloud
-
-### Required Environment Variables for Production
-
-- `DATABASE_URL`
-- `REDIS_URL`
-- `NEXT_PUBLIC_NEON_AUTH_URL` (your Neon Auth URL from dashboard)
-- `GEMINI_API_KEY`
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `AI_API_KEY`
+- `AI_BASE_URL` (optional)
+- `AI_MODEL_NAME` (optional)
+- `GOOGLE_CLIENT_ID` (optional)
+- `GOOGLE_CLIENT_SECRET` (optional)
 
 ## API Documentation
 
 ### Authentication Endpoints
-- Authentication handled by Neon Auth at `/auth/sign-in` and `/auth/sign-up`
+- Sign-in / Sign-up handled at `/auth/sign-in` and `/auth/sign-up`
 - Account management at `/account/*` routes
+- User synchronization at `/api/auth/sync-user`
 
 ### Patient Endpoints
 - `GET /api/patients` - List patients (with filters)
@@ -354,32 +297,25 @@ npm start
 ### Prescription Endpoints
 - `GET /api/prescriptions` - List prescriptions
 - `POST /api/prescriptions` - Create prescription
-- `POST /api/prescriptions/ai-suggest` - Get AI suggestions
+- `POST /api/prescriptions/generate` - Generate AI prescriptions
 
 ### Report Endpoints
-- `GET /api/reports` - List reports
-- `POST /api/reports/upload` - Upload report to Cloudinary
-- `POST /api/reports/analyze` - Analyze with AI
+- `GET /api/reports/list` - List reports
+- `POST /api/reports/upload` - Upload report to Supabase Storage
 - `GET /api/reports/[id]/download` - Get signed download URL
 
 ### Chatbot Endpoints
-- `POST /api/chatbot/message` - Send message
-- `GET /api/chatbot/sessions` - Get chat history
+- `POST /api/chatbot` - Send message with medical guardrails
 
 ## Security Features
 
-- ✅ Role-based access control (RBAC)
-- ✅ Password hashing with bcrypt
-- ✅ JWT tokens in HTTP-only cookies
-- ✅ CSRF protection
-- ✅ Rate limiting
-- ✅ Input validation with Zod
-- ✅ SQL injection prevention (ORM)
-- ✅ XSS protection
-- ✅ Audit logging
-- ✅ Secure file storage with Cloudinary (signed URLs)
-- ✅ Private file access with expiration
-- ✅ HIPAA-compliant file handling
+- ✅ Role-based access control (RBAC: Admin, Doctor, Patient)
+- ✅ Secure session handling via `@supabase/ssr` cookies
+- ✅ Row Level Security (RLS) policies on database tables
+- ✅ Input validation and error sanitization
+- ✅ Medical safety disclaimers & guardrails on AI generation
+- ✅ Secure file storage with Supabase Storage signed URLs
+- ✅ Private report access with expiration tokens
 
 ## License
 

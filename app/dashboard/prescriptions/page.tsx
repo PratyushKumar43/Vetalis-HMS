@@ -4,7 +4,7 @@
  * List and manage prescriptions with AI assistance
  */
 
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
 import { Pill, Plus, Search, Filter, Sparkles } from "lucide-react";
 import Link from "next/link";

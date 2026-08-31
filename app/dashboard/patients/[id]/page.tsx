@@ -4,7 +4,7 @@
  * View patient information, medical history, vitals, and reports
  */
 
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
 import { ArrowLeft, Edit, Download, Calendar, Activity, FileText, Pill, Heart } from "lucide-react";
 import Link from "next/link";

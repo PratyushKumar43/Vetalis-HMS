@@ -67,21 +67,32 @@ export default function NewPrescriptionForm({ userRole, userId, isAIMode }: NewP
     setMedications(updated);
   };
 
+  const [symptoms, setSymptoms] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+
   const handleAISuggest = async () => {
+    if (!symptoms.trim() && !diagnosis.trim()) {
+      alert("Please enter patient symptoms or diagnosis first to generate AI suggestions.");
+      return;
+    }
     setLoading(true);
-    // TODO: Call Gemini AI API
-    setTimeout(() => {
-      setAiSuggestions([
-        {
-          name: "Aspirin",
-          dosage: "81mg",
-          frequency: "Once daily",
-          duration: "30 days",
-          reason: "Cardiovascular protection",
-        },
-      ]);
+    try {
+      const res = await fetch("/api/prescriptions/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symptoms, diagnosis }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to generate AI suggestions");
+      }
+      setAiSuggestions(data.suggestions || []);
+    } catch (err: any) {
+      console.error("AI Prescription generation error:", err);
+      alert(err.message || "Failed to generate AI prescription suggestions");
+    } finally {
       setLoading(false);
-    }, 2000);
+    }
   };
 
   const onSubmit = async (data: PrescriptionForm) => {
@@ -184,9 +195,9 @@ export default function NewPrescriptionForm({ userRole, userId, isAIMode }: NewP
         </div>
 
         {isAIMode && (
-          <div className="bg-white rounded-lg border border-slate-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">AI Suggestions</h2>
+          <div className="bg-white rounded-lg border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">AI Prescription Generator</h2>
               <button
                 type="button"
                 onClick={handleAISuggest}
@@ -194,8 +205,30 @@ export default function NewPrescriptionForm({ userRole, userId, isAIMode }: NewP
                 className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4" />
-                {loading ? "Generating..." : "Get AI Suggestions"}
+                {loading ? "Generating..." : "Generate AI Suggestions"}
               </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Patient Symptoms</label>
+                <input
+                  type="text"
+                  value={symptoms}
+                  onChange={(e) => setSymptoms(e.target.value)}
+                  placeholder="e.g. Fever, chest congestion, dry cough"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Clinical Diagnosis</label>
+                <input
+                  type="text"
+                  value={diagnosis}
+                  onChange={(e) => setDiagnosis(e.target.value)}
+                  placeholder="e.g. Acute Bronchitis"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
             </div>
             {aiSuggestions.length > 0 && (
               <div className="space-y-3">

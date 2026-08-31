@@ -1,33 +1,52 @@
 /**
  * Database Helper Functions
  * 
- * Helper functions for common database operations using Neon
+ * Helper functions for common database operations using Supabase
  */
 
-import { sql } from "./db";
+import { supabase } from "./db";
 
 // ============================================
 // User Operations
 // ============================================
 
 export async function getUserById(userId: string) {
-  const result = await sql`
-    SELECT * FROM users WHERE id = ${userId}::uuid
-  `;
-  return result.length > 0 ? result[0] : null;
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", userId)
+    .single();
+  if (error) {
+    console.error("getUserById error:", error);
+    return null;
+  }
+  return data;
 }
 
 export async function getUserByEmail(email: string) {
-  const result = await sql`
-    SELECT * FROM users WHERE email = ${email}
-  `;
-  return result.length > 0 ? result[0] : null;
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("email", email)
+    .single();
+  if (error) {
+    console.error("getUserByEmail error:", error);
+    return null;
+  }
+  return data;
 }
 
 export async function getUsersByRole(role: "admin" | "doctor" | "patient") {
-  return await sql`
-    SELECT * FROM users WHERE role = ${role} ORDER BY created_at DESC
-  `;
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("role", role)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("getUsersByRole error:", error);
+    return [];
+  }
+  return data || [];
 }
 
 // ============================================
@@ -35,38 +54,53 @@ export async function getUsersByRole(role: "admin" | "doctor" | "patient") {
 // ============================================
 
 export async function getPatientById(patientId: string) {
-  const result = await sql`
-    SELECT * FROM patients WHERE id = ${patientId}::uuid
-  `;
-  return result.length > 0 ? result[0] : null;
+  const { data, error } = await supabase
+    .from("patients")
+    .select("*, users(*)")
+    .eq("id", patientId)
+    .single();
+  if (error) {
+    console.error("getPatientById error:", error);
+    return null;
+  }
+  return data;
 }
 
 export async function getPatientsByDoctor(doctorId: string) {
-  // For doctors, show all patients (they can manage any patient)
-  // In a real system, you might want to filter by clinic or assignment
-  return await sql`
-    SELECT p.*, u.name, u.email, u.phone, u.created_at
-    FROM patients p
-    JOIN users u ON p.id = u.id
-    ORDER BY u.name
-  `;
+  const { data, error } = await supabase
+    .from("patients")
+    .select("*, users!inner(name, email, phone, created_at)");
+  if (error) {
+    console.error("getPatientsByDoctor error:", error);
+    return [];
+  }
+  return (data || []).map((p: any) => ({
+    ...p,
+    name: p.users?.name,
+    email: p.users?.email,
+    phone: p.users?.phone,
+    created_at: p.users?.created_at,
+  }));
 }
 
 export async function getAllPatients(limit: number = 100, offset: number = 0) {
-  return await sql`
-    SELECT 
-      p.*, 
-      u.name, 
-      u.email, 
-      u.phone, 
-      u.created_at,
-      u.role
-    FROM patients p
-    JOIN users u ON p.id = u.id
-    WHERE u.role = 'patient'
-    ORDER BY u.name ASC
-    LIMIT ${limit} OFFSET ${offset}
-  `;
+  const { data, error } = await supabase
+    .from("patients")
+    .select("*, users!inner(name, email, phone, created_at, role)")
+    .eq("users.role", "patient")
+    .range(offset, offset + limit - 1);
+  if (error) {
+    console.error("getAllPatients error:", error);
+    return [];
+  }
+  return (data || []).map((p: any) => ({
+    ...p,
+    name: p.users?.name,
+    email: p.users?.email,
+    phone: p.users?.phone,
+    created_at: p.users?.created_at,
+    role: p.users?.role,
+  }));
 }
 
 // ============================================
@@ -74,23 +108,35 @@ export async function getAllPatients(limit: number = 100, offset: number = 0) {
 // ============================================
 
 export async function getPrescriptionsByPatient(patientId: string) {
-  return await sql`
-    SELECT p.*, u.name as doctor_name
-    FROM prescriptions p
-    JOIN users u ON p.doctor_id = u.id
-    WHERE p.patient_id = ${patientId}::uuid
-    ORDER BY p.created_at DESC
-  `;
+  const { data, error } = await supabase
+    .from("prescriptions")
+    .select("*, users!doctor_id(name)")
+    .eq("patient_id", patientId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("getPrescriptionsByPatient error:", error);
+    return [];
+  }
+  return (data || []).map((p: any) => ({
+    ...p,
+    doctor_name: p.users?.name,
+  }));
 }
 
 export async function getPrescriptionsByDoctor(doctorId: string) {
-  return await sql`
-    SELECT p.*, u.name as patient_name
-    FROM prescriptions p
-    JOIN users u ON p.patient_id = u.id
-    WHERE p.doctor_id = ${doctorId}::uuid
-    ORDER BY p.created_at DESC
-  `;
+  const { data, error } = await supabase
+    .from("prescriptions")
+    .select("*, users!patient_id(name)")
+    .eq("doctor_id", doctorId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("getPrescriptionsByDoctor error:", error);
+    return [];
+  }
+  return (data || []).map((p: any) => ({
+    ...p,
+    patient_name: p.users?.name,
+  }));
 }
 
 // ============================================
@@ -101,22 +147,30 @@ export async function getVitalsByPatient(
   patientId: string,
   limit: number = 30
 ) {
-  return await sql`
-    SELECT * FROM vitals
-    WHERE patient_id = ${patientId}::uuid
-    ORDER BY recorded_at DESC
-    LIMIT ${limit}
-  `;
+  const { data, error } = await supabase
+    .from("vitals")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("recorded_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("getVitalsByPatient error:", error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function getLatestVitals(patientId: string) {
-  const result = await sql`
-    SELECT * FROM vitals
-    WHERE patient_id = ${patientId}::uuid
-    ORDER BY recorded_at DESC
-    LIMIT 1
-  `;
-  return result.length > 0 ? result[0] : null;
+  const { data, error } = await supabase
+    .from("vitals")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("recorded_at", { ascending: false })
+    .limit(1);
+  if (error || !data || data.length === 0) {
+    return null;
+  }
+  return data[0];
 }
 
 // ============================================
@@ -124,18 +178,29 @@ export async function getLatestVitals(patientId: string) {
 // ============================================
 
 export async function getReportsByPatient(patientId: string) {
-  return await sql`
-    SELECT * FROM medical_reports
-    WHERE patient_id = ${patientId}::uuid
-    ORDER BY uploaded_at DESC
-  `;
+  const { data, error } = await supabase
+    .from("medical_reports")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("uploaded_at", { ascending: false });
+  if (error) {
+    console.error("getReportsByPatient error:", error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function getReportById(reportId: string) {
-  const result = await sql`
-    SELECT * FROM medical_reports WHERE id = ${reportId}::uuid
-  `;
-  return result.length > 0 ? result[0] : null;
+  const { data, error } = await supabase
+    .from("medical_reports")
+    .select("*")
+    .eq("id", reportId)
+    .single();
+  if (error) {
+    console.error("getReportById error:", error);
+    return null;
+  }
+  return data;
 }
 
 // ============================================
@@ -143,21 +208,35 @@ export async function getReportById(reportId: string) {
 // ============================================
 
 export async function getDoctorById(doctorId: string) {
-  const result = await sql`
-    SELECT d.*, u.name, u.email, u.phone
-    FROM doctors d
-    JOIN users u ON d.id = u.id
-    WHERE d.id = ${doctorId}::uuid
-  `;
-  return result.length > 0 ? result[0] : null;
+  const { data, error } = await supabase
+    .from("doctors")
+    .select("*, users!inner(name, email, phone)")
+    .eq("id", doctorId)
+    .single();
+  if (error) {
+    console.error("getDoctorById error:", error);
+    return null;
+  }
+  return {
+    ...data,
+    name: data.users?.name,
+    email: data.users?.email,
+    phone: data.users?.phone,
+  };
 }
 
 export async function getAllDoctors() {
-  return await sql`
-    SELECT d.*, u.name, u.email
-    FROM doctors d
-    JOIN users u ON d.id = u.id
-    WHERE d.verified = true
-    ORDER BY u.name
-  `;
+  const { data, error } = await supabase
+    .from("doctors")
+    .select("*, users!inner(name, email)")
+    .eq("verified", true);
+  if (error) {
+    console.error("getAllDoctors error:", error);
+    return [];
+  }
+  return (data || []).map((d: any) => ({
+    ...d,
+    name: d.users?.name,
+    email: d.users?.email,
+  }));
 }

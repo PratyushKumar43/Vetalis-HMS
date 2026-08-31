@@ -1,15 +1,14 @@
 /**
- * API Route: Get Vitals
+ * API Route: Get & Record Vitals
  * 
- * GET /api/vitals
- * 
- * Returns list of vital signs records
+ * GET /api/vitals - Retrieve vital sign history
+ * POST /api/vitals - Record vital signs (Doctor and Admin only)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { getVitalsByPatient } from "@/lib/db-helpers";
-import { sql } from "@/lib/db";
+import { supabase } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -112,3 +111,73 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = (user.role as string) || "patient";
+    if (userRole === "patient") {
+      return NextResponse.json(
+        { error: "Forbidden: Patients are not allowed to record or edit vitals." },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const {
+      patientId,
+      heartRate,
+      bloodPressureSystolic,
+      bloodPressureDiastolic,
+      temperature,
+      oxygenSaturation,
+      respiratoryRate,
+      weight,
+      notes,
+    } = body;
+
+    if (!patientId) {
+      return NextResponse.json(
+        { error: "Patient ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const { data: inserted, error: dbErr } = await supabase
+      .from("vitals")
+      .insert({
+        patient_id: patientId,
+        recorded_by: user.id,
+        heart_rate: heartRate ? parseInt(heartRate) : null,
+        blood_pressure_systolic: bloodPressureSystolic ? parseInt(bloodPressureSystolic) : null,
+        blood_pressure_diastolic: bloodPressureDiastolic ? parseInt(bloodPressureDiastolic) : null,
+        temperature: temperature ? parseFloat(temperature) : null,
+        oxygen_saturation: oxygenSaturation ? parseFloat(oxygenSaturation) : null,
+        respiratory_rate: respiratoryRate ? parseInt(respiratoryRate) : null,
+        weight: weight ? parseFloat(weight) : null,
+        notes: notes || null,
+      })
+      .select("*")
+      .single();
+
+    if (dbErr) {
+      console.error("Database error saving vitals:", dbErr);
+      throw new Error(dbErr.message);
+    }
+
+    return NextResponse.json({
+      success: true,
+      vital: inserted,
+      message: "Vitals recorded successfully",
+    });
+  } catch (err: any) {
+    console.error("Error creating vitals:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to record vitals" },
+      { status: 500 }
+    );
+  }
+}

@@ -1,14 +1,13 @@
 /**
- * API Route: Sync User from Neon Auth to Database
+ * API Route: Sync User to Supabase Database
  * 
  * POST /api/auth/sync-user
  * 
- * Creates or updates user in database after Neon Auth sign-up/sign-in
- * Handles role assignment from pre-created accounts or sign-up selection
+ * Creates or updates user in database after Supabase Auth sign-up/sign-in
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { supabase } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,92 +21,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists by email (admin may have pre-created the user)
-    const existingUserByEmail = await sql`
-      SELECT id, role FROM users WHERE email = ${email}
-    `;
+    const displayName = name || email.split("@")[0] || "User";
 
-    if (existingUserByEmail.length > 0) {
-      const existingUser = existingUserByEmail[0];
-      
-      // If the existing user has a different ID, update it to match Neon Auth ID
-      // This handles the case where admin created user first, then user signs up
-      if (existingUser.id !== id) {
-        // Update the existing user's ID to match Neon Auth ID
-        // First, update any foreign key references
-        await sql`
-          UPDATE users
-          SET id = ${id}::uuid, updated_at = NOW()
-          WHERE email = ${email}
-        `;
-        
-        // Update doctors table if exists
-        await sql`
-          UPDATE doctors
-          SET id = ${id}::uuid
-          WHERE id = ${existingUser.id}::uuid
-        `;
-        
-        // Update patients table if exists
-        await sql`
-          UPDATE patients
-          SET id = ${id}::uuid
-          WHERE id = ${existingUser.id}::uuid
-        `;
-      } else {
-        // Update existing user (preserve role if already set by admin)
-        const existingRole = existingUser.role;
-        await sql`
-          UPDATE users
-          SET email = ${email}, name = ${name || null}, updated_at = NOW()
-          WHERE id = ${id}::uuid
-        `;
-        // Role was pre-set by admin, it's already correct
+    // Upsert into users table
+    const { error: userErr } = await supabase.from("users").upsert({
+      id,
+      email,
+      name: displayName,
+      role,
+    });
+
+    if (userErr) {
+      console.error("Supabase user sync error:", userErr.message);
+      return NextResponse.json(
+        { error: userErr.message || "Failed to sync user in database" },
+        { status: 500 }
+      );
+    }
+
+    if (role === "patient") {
+      const { error: patientErr } = await supabase.from("patients").upsert({ id });
+      if (patientErr) {
+        console.error("Patient upsert error:", patientErr.message);
+        return NextResponse.json(
+          { error: patientErr.message || "Failed to create patient record" },
+          { status: 500 }
+        );
       }
-    } else {
-      // Check if user exists by ID
-      const existingUserById = await sql`
-        SELECT id, role FROM users WHERE id = ${id}::uuid
-      `;
-
-      if (existingUserById.length > 0) {
-        // Update existing user (preserve role if it was set)
-        await sql`
-          UPDATE users
-          SET email = ${email}, name = ${name || null}, updated_at = NOW()
-          WHERE id = ${id}::uuid
-        `;
-      } else {
-        // Create new user with the specified role (from sign-up form)
-        await sql`
-          INSERT INTO users (id, email, name, role, created_at, updated_at)
-          VALUES (${id}::uuid, ${email}, ${name || null}, ${role}, NOW(), NOW())
-          ON CONFLICT (id) DO UPDATE
-          SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = NOW()
-        `;
-
-        // Create role-specific records
-        if (role === "doctor") {
-          await sql`
-            INSERT INTO doctors (id, verified, created_at)
-            VALUES (${id}::uuid, false, NOW())
-            ON CONFLICT (id) DO NOTHING
-          `;
-        } else if (role === "patient") {
-          await sql`
-            INSERT INTO patients (id, created_at, updated_at)
-            VALUES (${id}::uuid, NOW(), NOW())
-            ON CONFLICT (id) DO NOTHING
-          `;
-        }
+    } else if (role === "doctor") {
+      const { error: doctorErr } = await supabase.from("doctors").upsert({ id, verified: false });
+      if (doctorErr) {
+        console.error("Doctor upsert error:", doctorErr.message);
+        return NextResponse.json(
+          { error: doctorErr.message || "Failed to create doctor record" },
+          { status: 500 }
+        );
       }
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error syncing user:", error);
     return NextResponse.json(
-      { error: "Failed to sync user" },
+      { error: error.message || "Failed to sync user" },
       { status: 500 }
     );
   }

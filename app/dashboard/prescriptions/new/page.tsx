@@ -4,7 +4,7 @@
  * Create new prescription with AI assistance or manual entry
  */
 
-import { getUser } from "@/lib/neon-auth-server";
+import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
 import NewPrescriptionForm from "@/components/dashboard/NewPrescriptionForm";
 

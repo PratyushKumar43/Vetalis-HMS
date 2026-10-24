@@ -2,12 +2,11 @@
  * API Route: Get & Record Vitals
  * 
  * GET /api/vitals - Retrieve vital sign history
- * POST /api/vitals - Record vital signs (Doctor and Admin only)
+ * POST /api/vitals - Record vital signs (Doctor assigned to patient, or Admin)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/supabase-auth-server";
-import { getVitalsByPatient } from "@/lib/db-helpers";
 import { supabase } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -17,10 +16,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (user.role as string) || "patient";
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const userRole = user.role;
     const searchParams = request.nextUrl.searchParams;
-    const patientId = searchParams.get("patientId") || (userRole === "patient" ? user.id : null);
+    let patientId = searchParams.get("patientId");
     const limit = parseInt(searchParams.get("limit") || "30");
+
+    if (userRole === "patient") {
+      patientId = user.id;
+    }
 
     if (!patientId) {
       return NextResponse.json(
@@ -29,15 +36,33 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check permissions
-    if (userRole === "patient" && user.id !== patientId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // Role checks
+    if (userRole === "doctor") {
+      const { data: assignment } = await supabase
+        .from("doctor_patient_assignments")
+        .select("id")
+        .eq("doctor_id", user.id)
+        .eq("patient_id", patientId)
+        .maybeSingle();
+
+      if (!assignment) {
+        return NextResponse.json(
+          { error: "Forbidden: You are not assigned to this patient." },
+          { status: 403 }
+        );
+      }
     }
 
-    const vitals = await getVitalsByPatient(patientId, limit);
+    const { data: vitalsData, error: vitalsErr } = await supabase
+      .from("vitals")
+      .select("*")
+      .eq("patient_id", patientId)
+      .order("recorded_at", { ascending: false })
+      .limit(limit);
 
-    // Format vitals for display
-    const formattedVitals = vitals.map((vital: any) => ({
+    if (vitalsErr) throw vitalsErr;
+
+    const formattedVitals = (vitalsData || []).map((vital: any) => ({
       id: vital.id,
       date: vital.recorded_at,
       heartRate: vital.heart_rate,
@@ -50,62 +75,15 @@ export async function GET(request: NextRequest) {
       weight: vital.weight ? parseFloat(vital.weight) : null,
     }));
 
-    // Calculate averages
-    const averages = {
-      heartRate: formattedVitals.length > 0
-        ? Math.round(
-            formattedVitals.reduce((sum, v) => sum + (v.heartRate || 0), 0) /
-              formattedVitals.filter((v) => v.heartRate).length
-          )
-        : 0,
-      temperature: formattedVitals.length > 0
-        ? parseFloat(
-            (
-              formattedVitals.reduce((sum, v) => sum + (v.temperature || 0), 0) /
-              formattedVitals.filter((v) => v.temperature).length
-            ).toFixed(1)
-          )
-        : 0,
-      oxygenSat: formattedVitals.length > 0
-        ? Math.round(
-            formattedVitals.reduce((sum, v) => sum + (v.oxygenSat || 0), 0) /
-              formattedVitals.filter((v) => v.oxygenSat).length
-          )
-        : 0,
-    };
-
-    // Calculate average blood pressure
-    let avgBP = "0/0";
-    const bpReadings = formattedVitals.filter((v) => v.bloodPressure);
-    if (bpReadings.length > 0) {
-      const systolic = Math.round(
-        bpReadings.reduce((sum, v) => {
-          const [s] = v.bloodPressure!.split("/").map(Number);
-          return sum + s;
-        }, 0) / bpReadings.length
-      );
-      const diastolic = Math.round(
-        bpReadings.reduce((sum, v) => {
-          const [, d] = v.bloodPressure!.split("/").map(Number);
-          return sum + d;
-        }, 0) / bpReadings.length
-      );
-      avgBP = `${systolic}/${diastolic}`;
-    }
-
     return NextResponse.json({
       success: true,
       vitals: formattedVitals,
-      averages: {
-        ...averages,
-        bloodPressure: avgBP,
-      },
       total: formattedVitals.length,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching vitals:", error);
     return NextResponse.json(
-      { error: "Failed to fetch vitals" },
+      { error: error.message || "Failed to fetch vitals" },
       { status: 500 }
     );
   }
@@ -118,10 +96,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (user.role as string) || "patient";
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const userRole = user.role;
     if (userRole === "patient") {
       return NextResponse.json(
-        { error: "Forbidden: Patients are not allowed to record or edit vitals." },
+        { error: "Forbidden: Patients are not allowed to record vitals." },
         { status: 403 }
       );
     }
@@ -146,6 +128,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify doctor assignment
+    if (userRole === "doctor") {
+      const { data: assignment } = await supabase
+        .from("doctor_patient_assignments")
+        .select("id")
+        .eq("doctor_id", user.id)
+        .eq("patient_id", patientId)
+        .maybeSingle();
+
+      if (!assignment) {
+        return NextResponse.json(
+          { error: "Forbidden: You are not assigned to this patient." },
+          { status: 403 }
+        );
+      }
+    }
+
     const { data: inserted, error: dbErr } = await supabase
       .from("vitals")
       .insert({
@@ -163,10 +162,7 @@ export async function POST(request: NextRequest) {
       .select("*")
       .single();
 
-    if (dbErr) {
-      console.error("Database error saving vitals:", dbErr);
-      throw new Error(dbErr.message);
-    }
+    if (dbErr) throw dbErr;
 
     return NextResponse.json({
       success: true,

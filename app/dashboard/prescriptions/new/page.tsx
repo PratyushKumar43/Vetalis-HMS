@@ -22,7 +22,7 @@ export default async function NewPrescriptionPage({
   // Only doctors and admins can create prescriptions
   const userRole = (user.role as string) || "patient";
   if (userRole === "patient") {
-    redirect("/dashboard/prescriptions");
+    redirect("/patient");
   }
 
   const isAIMode = searchParams.mode === "ai";

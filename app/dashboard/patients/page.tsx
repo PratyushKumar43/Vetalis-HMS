@@ -9,7 +9,10 @@ import { redirect } from "next/navigation";
 import { Users, Plus, Calendar, Clock, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import PatientList from "@/components/dashboard/PatientList";
-import { supabase } from "@/lib/db";
+import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 export default async function PatientsPage() {
   const user = await getUser();
@@ -21,25 +24,64 @@ export default async function PatientsPage() {
   // Check permissions
   const userRole = (user.role as string) || "patient";
   if (userRole === "patient") {
-    redirect("/dashboard");
+    redirect("/patient");
   }
+
+  const cookieStore = await cookies();
+  const supabase = createClient(cookieStore);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
   const weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-  const [
-    { count: totalPatients },
-    { count: activeToday },
-    { count: newThisWeek },
-    { count: pendingRecords },
-  ] = await Promise.all([
-    supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "patient"),
-    supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "patient").gte("created_at", todayStart.toISOString()),
-    supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "patient").gte("created_at", weekStart.toISOString()),
-    supabase.from("patients").select("*", { count: "exact", head: true }).is("date_of_birth", null),
-  ]);
+  let totalPatients = 0;
+  let activeToday = 0;
+  let newThisWeek = 0;
+  let pendingRecords = 0;
+
+  if (userRole === "doctor") {
+    // For doctors, scope stats to their assigned patients
+    const { data: assignments } = await supabase
+      .from("doctor_patient_assignments")
+      .select("patient_id")
+      .eq("doctor_id", user.id);
+
+    const assignedIds = (assignments || []).map((a: any) => a.patient_id);
+    totalPatients = assignedIds.length;
+
+    if (assignedIds.length > 0) {
+      const [
+        { count: todayCount },
+        { count: weekCount },
+        { count: pendingCount },
+      ] = await Promise.all([
+        supabase.from("users").select("*", { count: "exact", head: true }).in("id", assignedIds).gte("created_at", todayStart.toISOString()),
+        supabase.from("users").select("*", { count: "exact", head: true }).in("id", assignedIds).gte("created_at", weekStart.toISOString()),
+        supabase.from("patients").select("*", { count: "exact", head: true }).in("id", assignedIds).is("date_of_birth", null),
+      ]);
+      activeToday = todayCount || 0;
+      newThisWeek = weekCount || 0;
+      pendingRecords = pendingCount || 0;
+    }
+  } else {
+    // For admin, query all patients
+    const [
+      { count: totalCount },
+      { count: todayCount },
+      { count: weekCount },
+      { count: pendingCount },
+    ] = await Promise.all([
+      supabase.from("patients").select("*", { count: "exact", head: true }),
+      supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "patient").gte("created_at", todayStart.toISOString()),
+      supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "patient").gte("created_at", weekStart.toISOString()),
+      supabase.from("patients").select("*", { count: "exact", head: true }).is("date_of_birth", null),
+    ]);
+    totalPatients = totalCount || 0;
+    activeToday = todayCount || 0;
+    newThisWeek = weekCount || 0;
+    pendingRecords = pendingCount || 0;
+  }
 
   return (
     <div className="space-y-6">

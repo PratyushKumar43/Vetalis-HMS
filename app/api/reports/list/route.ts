@@ -1,15 +1,15 @@
 /**
- * API Route: Get Reports
+ * API Route: Get Medical Reports
  * 
  * GET /api/reports/list
  * 
- * Returns list of medical reports
+ * Returns authorized list of medical reports based on role and assignment
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/supabase-auth-server";
-import { getReportsByPatient } from "@/lib/db-helpers";
-import { sql } from "@/lib/db";
+import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,46 +18,70 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (user.role as string) || "patient";
-    const searchParams = request.nextUrl.searchParams;
-    const patientId = searchParams.get("patientId");
-    const reportType = searchParams.get("type") || "all";
-
-    let reports;
-
-    if (userRole === "patient") {
-      // Patients see their own reports
-      reports = await getReportsByPatient(user.id);
-    } else if (userRole === "doctor") {
-      // Doctors see reports for their patients
-      if (patientId) {
-        reports = await getReportsByPatient(patientId);
-      } else {
-        reports = await sql`
-          SELECT mr.*, u.name as patient_name
-          FROM medical_reports mr
-          JOIN users u ON mr.patient_id = u.id
-          WHERE mr.doctor_id = ${user.id}::uuid
-          ORDER BY mr.uploaded_at DESC
-        `;
-      }
-    } else {
-      // Admins see all reports
-      if (patientId) {
-        reports = await getReportsByPatient(patientId);
-      } else {
-        reports = await sql`
-          SELECT mr.*, u.name as patient_name
-          FROM medical_reports mr
-          JOIN users u ON mr.patient_id = u.id
-          ORDER BY mr.uploaded_at DESC
-          LIMIT 100
-        `;
-      }
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
     }
 
-    // Format reports
-    const formattedReports = reports.map((report: any) => {
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+
+    const userRole = user.role;
+    const searchParams = request.nextUrl.searchParams;
+    const requestedPatientId = searchParams.get("patientId");
+    const reportType = searchParams.get("type") || "all";
+
+    let reportsQuery = supabase
+      .from("medical_reports")
+      .select("*, patient:patient_id(users(name, email))");
+
+    if (userRole === "patient") {
+      // Patients strictly see only their own reports
+      reportsQuery = reportsQuery.eq("patient_id", user.id);
+    } else if (userRole === "doctor") {
+      // Fetch list of assigned patients
+      const { data: assignments } = await supabase
+        .from("doctor_patient_assignments")
+        .select("patient_id")
+        .eq("doctor_id", user.id);
+
+      const assignedPatientIds = (assignments || []).map((a: any) => a.patient_id);
+
+      if (requestedPatientId) {
+        if (!assignedPatientIds.includes(requestedPatientId)) {
+          return NextResponse.json(
+            { error: "Forbidden: You are not assigned to this patient." },
+            { status: 403 }
+          );
+        }
+        reportsQuery = reportsQuery.eq("patient_id", requestedPatientId);
+      } else {
+        if (assignedPatientIds.length === 0) {
+          return NextResponse.json({ success: true, reports: [], total: 0 });
+        }
+        reportsQuery = reportsQuery.in("patient_id", assignedPatientIds);
+      }
+    } else if (userRole === "admin") {
+      if (requestedPatientId) {
+        reportsQuery = reportsQuery.eq("patient_id", requestedPatientId);
+      }
+    } else {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (reportType !== "all") {
+      reportsQuery = reportsQuery.eq("report_type", reportType);
+    }
+
+    reportsQuery = reportsQuery.order("uploaded_at", { ascending: false }).limit(100);
+
+    const { data: rawReports, error: dbError } = await reportsQuery;
+
+    if (dbError) {
+      console.error("Error fetching reports:", dbError);
+      return NextResponse.json({ error: dbError.message }, { status: 500 });
+    }
+
+    const formattedReports = (rawReports || []).map((report: any) => {
       const anomalies = report.anomalies
         ? Array.isArray(report.anomalies)
           ? report.anomalies
@@ -66,14 +90,13 @@ export async function GET(request: NextRequest) {
 
       return {
         id: report.id,
-        patientName: report.patient_name || "Unknown",
+        patientName: report.patient?.users?.name || report.users?.name || "Unknown",
+        patientId: report.patient_id,
         reportType: report.report_type,
         uploadedDate: report.uploaded_at,
         aiAnalyzed: !!report.ai_analysis,
         anomalies: anomalies.length,
-        confidence: report.confidence_score
-          ? parseFloat(report.confidence_score)
-          : null,
+        confidence: report.confidence_score ? parseFloat(report.confidence_score) : null,
         status: report.ai_analysis
           ? anomalies.length > 0
             ? "Analyzed"
@@ -82,23 +105,16 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Filter by type if specified
-    let filtered = formattedReports;
-    if (reportType !== "all") {
-      filtered = formattedReports.filter((r) => r.reportType === reportType);
-    }
-
     return NextResponse.json({
       success: true,
-      reports: filtered,
-      total: filtered.length,
+      reports: formattedReports,
+      total: formattedReports.length,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching reports:", error);
     return NextResponse.json(
-      { error: "Failed to fetch reports" },
+      { error: error.message || "Failed to fetch reports" },
       { status: 500 }
     );
   }
 }
-

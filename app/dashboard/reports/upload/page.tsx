@@ -17,6 +17,10 @@ export default async function ReportUploadPage() {
 
   const userRole = (user.role as string) || "patient";
 
+  if (userRole === "patient") {
+    redirect("/patient");
+  }
+
   return (
     <div className="space-y-6">
       <div>

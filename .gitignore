@@ -12,7 +12,24 @@
 .env
 .env.*
 *.env
+*.env.local
+*.local
 !.env.example
+
+# Credentials, Secrets & Tokens
+credentials.json
+*credentials*.json
+client_secret*.json
+service-account*.json
+*service_account*.json
+firebase-adminsdk*.json
+*secret*.json
+*.secret
+secrets/
+*.token
+*.credential
+*.credentials
+auth*.json
 
 # Certificates & Private Keys
 *.pem
@@ -23,18 +40,48 @@
 *.pfx
 *.id_rsa
 *.id_dsa
+*.keystore
+*.jks
 secring.gpg
+
+# Testing, Test Suites & Coverage
+/coverage
+*.lcov
+.nyc_output
+test-results/
+playwright-report/
+cypress/videos/
+cypress/screenshots/
+__tests__/
+tests/
+test/
+*.test.js
+*.test.jsx
+*.test.ts
+*.test.tsx
+*.test.mjs
+*.spec.js
+*.spec.jsx
+*.spec.ts
+*.spec.tsx
+*.spec.mjs
+
+# Testing & Provisioning Scripts
+scripts/test-*
+scripts/verify-*
+scripts/check-*
+scripts/setup-*
+scripts/provision-*
+
+# Documentation
+/docs/
+docs/
 
 # Next.js Build Outputs
 /.next/
 /out/
 /build
 /dist
-
-# Testing & Coverage
-/coverage
-*.lcov
-.nyc_output
 
 # Debug & Logs
 npm-debug.log*

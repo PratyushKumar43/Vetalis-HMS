@@ -1,10 +1,10 @@
 /**
- * API Route: Upload Medical Report to Supabase Storage with OCR & AI Analysis
+ * API Route: Upload Medical Report to Private Supabase Storage
  * 
  * POST /api/reports/upload
  * 
  * Handles file uploads for medical reports (PDFs, images)
- * Uploads to Supabase Storage, extracts text via OCR.space, runs AI analysis, and stores in database.
+ * Restricts uploads to authorized clinical staff (Doctor assigned to patient, or Admin).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,21 +21,68 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (user.role as string) || "patient";
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const userRole = user.role;
+
+    // Patients cannot upload or publish clinical reports
+    if (userRole === "patient") {
+      return NextResponse.json(
+        { error: "Forbidden: Patients are not permitted to upload medical reports." },
+        { status: 403 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    let patientId = formData.get("patientId") as string;
+    const patientId = formData.get("patientId") as string;
     const reportType = (formData.get("reportType") as "lab" | "imaging" | "pathology" | "other") || "lab";
-
-    if (userRole === "patient" || !patientId) {
-      patientId = user.id;
-    }
 
     if (!file) {
       return NextResponse.json(
         { error: "Missing required file" },
         { status: 400 }
       );
+    }
+
+    if (!patientId) {
+      return NextResponse.json(
+        { error: "Patient ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Verify patient exists
+    const { data: patientExists } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .maybeSingle();
+
+    if (!patientExists) {
+      return NextResponse.json(
+        { error: "Patient not found" },
+        { status: 404 }
+      );
+    }
+
+    // For doctors: verify assignment to the patient
+    if (userRole === "doctor") {
+      const { data: assignment } = await supabase
+        .from("doctor_patient_assignments")
+        .select("id")
+        .eq("doctor_id", user.id)
+        .eq("patient_id", patientId)
+        .maybeSingle();
+
+      if (!assignment) {
+        return NextResponse.json(
+          { error: "Forbidden: You are not assigned to this patient." },
+          { status: 403 }
+        );
+      }
     }
 
     // Validate file type
@@ -60,7 +107,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     const reportId = `report_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-    // 1. Upload file to Supabase Storage
+    // 1. Upload file to private Supabase Storage
     const uploadResult = await uploadMedicalReport(
       buffer,
       patientId,
@@ -69,7 +116,7 @@ export async function POST(request: NextRequest) {
       file.type
     );
 
-    // 2. Perform OCR Text Extraction via OCR.space API
+    // 2. Perform OCR Text Extraction if supported
     let extractedText = "";
     try {
       extractedText = await extractTextWithOcr(buffer, file.name, file.type);

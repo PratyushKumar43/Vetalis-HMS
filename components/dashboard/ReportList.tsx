@@ -191,17 +191,15 @@ export default function ReportList({ userRole }: ReportListProps) {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      <Link
-                        href={`/dashboard/reports/${report.id}`}
-                        className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-                      >
-                        <Eye className="w-5 h-5 text-slate-600" />
-                      </Link>
                       <a
-                        href={`/api/reports/${report.id}/download`}
-                        className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                        href={`/api/reports/${report.id}/download?redirect=true`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 text-xs font-semibold transition-colors"
+                        title="Download Signed Report"
                       >
-                        <Download className="w-5 h-5 text-slate-600" />
+                        <Download className="w-4 h-4" />
+                        Download
                       </a>
                     </div>
                   </td>

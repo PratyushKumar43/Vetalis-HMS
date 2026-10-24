@@ -28,6 +28,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || (request.nextUrl.origin && request.nextUrl.origin !== "null" ? request.nextUrl.origin : "http://localhost:3000");
+
     // Exchange authorization code for access token
     const tokenResponse = await fetch(`${authUrl}/oauth/${provider}/callback`, {
       method: "POST",
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         code,
         state,
-        redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/sign-in`,
+        redirect_uri: `${appBaseUrl}/auth/sign-in`,
       }),
     });
 

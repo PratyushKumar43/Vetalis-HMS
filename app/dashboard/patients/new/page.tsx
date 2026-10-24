@@ -20,7 +20,7 @@ export default async function NewPatientPage() {
   // Check permissions - only admins can manually create patients
   const userRole = (user.role as string) || "patient";
   if (userRole !== "admin") {
-    redirect("/dashboard/patients");
+    redirect(`/${userRole}`);
   }
 
   return (

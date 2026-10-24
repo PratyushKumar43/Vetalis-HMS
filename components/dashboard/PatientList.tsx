@@ -35,6 +35,7 @@ export default function PatientList({ userRole }: PatientListProps) {
   const fetchPatients = async () => {
     try {
       setLoading(true);
+      setError("");
       const response = await fetch(`/api/patients?search=${searchQuery}`);
       const data = await response.json();
 

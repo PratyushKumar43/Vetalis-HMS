@@ -16,7 +16,7 @@ export const authClient = {
         password,
       });
       if (error) throw error;
-      return { user: data.user, data: { user: data.user } };
+      return { user: data.user, data: { user: data.user, session: data.session } };
     },
   },
   signUp: {
@@ -24,31 +24,30 @@ export const authClient = {
       email,
       password,
       name,
-      role = "patient",
     }: {
       email: string;
       password: string;
       name?: string;
-      role?: string;
     }) => {
+      // Public signup does NOT pass role - server and DB trigger strictly enforce 'patient' role
       const { data, error } = await supabaseClient.auth.signUp({
         email,
         password,
         options: {
-          data: { name, role },
+          data: { name },
         },
       });
       if (error) throw error;
-      return { user: data.user, data: { user: data.user } };
+      return { user: data.user, data: { user: data.user, session: data.session } };
     },
   },
   signOut: async () => {
     const { error } = await supabaseClient.auth.signOut();
-    if (error) throw error;
+    if (error) console.error("SignOut error:", error);
   },
   getSession: async () => {
     const { data } = await supabaseClient.auth.getSession();
-    return { user: data.session?.user || null };
+    return { user: data.session?.user || null, session: data.session };
   },
 };
 

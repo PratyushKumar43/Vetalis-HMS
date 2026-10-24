@@ -1,229 +1,184 @@
 # Vetalis - AI-Powered Healthcare Management System
 
-A comprehensive healthcare management platform with AI-powered features, built with Next.js 14, TypeScript, and modern web technologies.
+A production-grade healthcare management platform featuring strict Role-Based Access Control (RBAC), private medical document storage, and clinical AI assistants. Built with **Next.js 14 (App Router)**, **TypeScript**, **Supabase (@supabase/ssr)**, and **Google Gemini AI**.
 
 ![Vetalis Healthcare Management System](image.png)
 
+---
+
+## Recent Project Updates & Enhancements
+
+### 1. Role-Based Access Control (RBAC) & Dedicated Portals
+- **Three Dedicated Portals**: Distinct dashboards and layout experiences for `/admin`, `/doctor`, and `/patient`.
+- **Middleware Route Guards**: Strict server-side route interception in `middleware.ts` preventing privilege escalation and cross-role access.
+- **Postgres Row Level Security (RLS)**: Database-level security functions (`is_admin`, `is_doctor`, `is_patient`, `is_doctor_assigned`) enforcing that users can only read/write authorized patient rows and medical records.
+
+### 2. Complete Account Lifecycle & Onboarding Subsystem
+- **Admin User Provisioning**: System administrators can provision new Doctor and Patient accounts via the Admin Portal (`/admin`) or API (`/api/users/create`).
+- **Pre-authorized Roles**: Pre-authorized email invites stored in `preauthorized_roles` to guarantee intended roles upon signup or invitation claim.
+- **Invitation & Password Setup**: Dispatches invitation tokens via Supabase Auth Admin. New users arrive at `/auth/set-password` to establish secure credentials.
+- **Self-Service Password Recovery**: End-to-end password recovery flow with `/auth/forgot-password`, Supabase OTP/token exchange in `/auth/confirm`, and `/auth/reset-password`.
+- **Account Settings & Security**: In-app profile inspection and password change module at `/account`.
+- **Lifecycle Status Control**: Active, Invited, Deactivated, and Suspended account states with immediate middleware enforcement.
+
+### 3. Doctor-Patient Clinical Assignment Subsystem
+- **Relational Assignment Model**: Supported by `doctor_patient_assignments` table with unique pairings and assignment timestamps.
+- **Strict Clinical Boundaries**: Doctors have access exclusively to patients assigned to them, while administrators retain facility-wide oversight.
+- **Real-Time Assignment UI**: Assign and unassign doctors directly from the patient management and admin interfaces.
+
+### 4. Zero Hardcoded Credentials & Secure Configuration
+- **Full Credential Sanitization**: Audited and purged all hardcoded passwords, test credentials, and static endpoints from the codebase.
+- **Dynamic Application Routing**: Dynamic URL resolution prioritizing `NEXT_PUBLIC_APP_URL` and `request.nextUrl.origin` for auth callbacks and invitation redirects.
+- **Configurable External APIs**: Configurable OCR endpoints and API keys with graceful degradation if optional keys are omitted.
+- **Hardened Git Safety**: Extended `.gitignore` to prevent tracking of test scripts, credentials, secrets, and environment files.
+
+### 5. Private Supabase Storage & Signed URLs
+- **Private Storage Bucket**: Medical documents stored in a locked `medical-reports` Supabase Storage bucket.
+- **Time-Limited Signed URLs**: Direct public bucket access is prohibited. File downloads route through `/api/reports/[id]/download`, verifying user authorization before generating short-lived signed URLs.
+
+### 6. Universal Clinical AI with Strict Guardrails
+- **Multi-Provider Support**: Compatible with Google Gemini API, OpenCode Zen, OpenAI, or any OpenAI-compatible proxy via `AI_BASE_URL`.
+- **Clinical Pharmacy Prescriptions**: Suggests medication name, dosage, frequency, and rationale based on patient symptoms, diagnosis, and medical history.
+- **Diagnostic Report Analyzer**: Parses structured clinical findings, abnormalities, and follow-up recommendations from lab results.
+- **Medical Guardrails**: Real-time filtering declining non-medical queries with official healthcare disclaimers.
+
+---
+
 ## Features
 
-### Landing Page
-- 🎨 Modern, clean medical UI design
-- 📱 Fully responsive (mobile-first)
-- ⚡ Optimized performance with Next.js Image
-- 🎯 High-conversion landing page
-- 🔒 Security-focused messaging
-- 🏥 Doctor-first design approach
+### Role-Based Portals
 
-### Dashboard Features
-- 👥 **Patient Management** - Complete patient records and history
-- 💊 **AI Prescriptions** - AI-assisted prescription generation with Gemini
-- 📄 **Report Analyzer** - AI-powered medical report analysis
-- 🤖 **Medical Chatbot** - Safe, medical-only AI assistant
-- 📊 **Vitals Tracking** - Real-time vital signs monitoring and visualization
-- 🔐 **Role-Based Access** - Admin, Doctor, and Patient roles with granular permissions
+| Portal | Route | Key Capabilities |
+| :--- | :--- | :--- |
+| **Admin Portal** | `/admin` | System-wide statistics, user lifecycle management (create, invite, deactivate), doctor-patient assignments, and audit tracking. |
+| **Doctor Portal** | `/doctor` | Assigned patient roster, clinical history, vital signs monitoring, AI-assisted prescription generation, and report analysis. |
+| **Patient Portal** | `/patient` | Personal medical records, active prescriptions, lab report viewing, and interactive health assistant chatbot. |
+
+### Core Modules
+- 👥 **Patient Management** - Complete medical records, allergies, blood type, emergency contacts, and history.
+- 💊 **AI Prescription Studio** - Medication suggestions with dosage and clinical rationale powered by Gemini.
+- 📄 **Report Analyzer & OCR** - Document text extraction via OCR.space with automated AI diagnostic summarization.
+- 🤖 **Medical AI Chatbot** - Specialized healthcare conversational agent with medical-only guardrails.
+- 📊 **Vitals Tracking** - Blood pressure, heart rate, temperature, respiratory rate, and blood sugar charting with Recharts.
+- 🔔 **Notification Center** - Real-time alerts for prescription updates, lab reports, and account notices.
+
+---
 
 ## Tech Stack
 
 ### Frontend
 - **Framework:** Next.js 14 (App Router)
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS
-- **Icons:** Lucide React
-- **Animations:** Framer Motion
-- **Forms:** React Hook Form + Zod validation
-- **Fonts:** Inter (Google Fonts)
+- **Language:** TypeScript 5
+- **Styling:** Tailwind CSS + PostCSS
+- **Component Primitives & Icons:** Lucide React, Framer Motion
+- **Data Visualization:** Recharts
+- **Forms & Validation:** React Hook Form + Zod
+- **Notifications:** Sonner Toast Notifications
 
 ### Backend & Infrastructure
-- **Authentication:** Supabase Auth (Email & Google OAuth)
-- **Database:** Supabase PostgreSQL
-- **File Storage:** Supabase Storage (medical reports & documents)
-- **AI Model:** Google Gemini AI
+- **Authentication & SSR:** Supabase Auth via `@supabase/ssr` (HTTP-only cookie sessions)
+- **Database:** Supabase PostgreSQL with Row Level Security (RLS)
+- **Storage:** Supabase Storage (Private document buckets)
+- **AI / LLM:** Google Gemini API (`@google/generative-ai`) & OpenAI-compatible endpoints
+- **OCR:** OCR.space REST API
 
-### Deployment
-- **Platform:** Vercel
-- **Backend Infrastructure:** Supabase Ecosystem
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ 
-- npm, yarn, or pnpm
-
-### Installation
-
-1. Install dependencies:
-```bash
-npm install
-# or
-yarn install
-# or
-pnpm install
-```
-
-2. Run the development server:
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-```
-
-3. Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## Documentation
-
-All detailed documentation files are located in the `/docs` folder:
-
-- **Setup Guides**: See `/docs/NEON_AUTH_SETUP.md`, `/docs/GOOGLE_OAUTH_SETUP.md`
-- **Implementation Guides**: See `/docs/DASHBOARD_IMPLEMENTATION.md`
-- **Feature Documentation**: See `/docs/NOTIFICATIONS_SETUP.md`, `/docs/ROLE_BASED_ACCOUNT_CREATION.md`
-- **Product Requirements**: See `/docs/prd.md`
-- **Migration Guides**: See `/docs/MIGRATION_TO_NEON_AUTH.md`
-
-For a complete list, see `/docs/README.md`.
+---
 
 ## Project Structure
 
 ```
 ├── app/
-│   ├── layout.tsx                    # Root layout with metadata
-│   ├── page.tsx                      # Landing page
-│   ├── globals.css                   # Global styles
-│   ├── (auth)/
-│   │   ├── login/
-│   │   └── signup/
-│   ├── dashboard/
-│   │   ├── layout.tsx                # Dashboard layout with sidebar
-│   │   ├── page.tsx                  # Dashboard home
-│   │   ├── patients/
-│   │   │   ├── page.tsx              # Patient list
-│   │   │   └── [id]/
-│   │   │       └── page.tsx          # Patient details
-│   │   ├── prescriptions/
-│   │   │   ├── page.tsx              # Prescription list
-│   │   │   └── new/
-│   │   │       └── page.tsx          # Create prescription
-│   │   ├── reports/
-│   │   │   ├── page.tsx              # Report list
-│   │   │   └── [id]/
-│   │   │       └── page.tsx          # Report analysis
-│   │   ├── chatbot/
-│   │   │   └── page.tsx              # Chatbot interface
-│   │   ├── vitals/
-│   │   │   └── page.tsx              # Vitals tracking
-│   │   └── admin/
-│   │       └── page.tsx              # Admin dashboard
+│   ├── layout.tsx                        # Root layout with fonts & providers
+│   ├── page.tsx                          # Public medical landing page
+│   ├── globals.css                       # Global Tailwind styling
+│   ├── admin/                            # Dedicated Admin Portal
+│   │   ├── layout.tsx
+│   │   └── page.tsx                      # Admin overview & management tabs
+│   ├── doctor/                           # Dedicated Doctor Portal
+│   │   ├── layout.tsx
+│   │   └── page.tsx                      # Doctor dashboard & assigned patients
+│   ├── patient/                          # Dedicated Patient Portal
+│   │   ├── layout.tsx
+│   │   └── page.tsx                      # Patient personal health overview
+│   ├── account/
+│   │   └── [...pathname]/page.tsx        # Profile details & password change
+│   ├── auth/
+│   │   ├── [...pathname]/page.tsx        # Sign-in & Sign-up interface
+│   │   ├── callback/route.ts             # Google OAuth & session exchange
+│   │   ├── confirm/route.ts              # OTP, email confirmation & token router
+│   │   ├── forgot-password/page.tsx      # Password reset request page
+│   │   ├── reset-password/page.tsx       # Set new password recovery page
+│   │   └── set-password/page.tsx         # First-time invite password setup
+│   ├── dashboard/                        # Shared clinical sub-features
+│   │   ├── chatbot/                      # Medical AI Chatbot interface
+│   │   ├── patients/                     # Patient directory & detailed profiles
+│   │   ├── prescriptions/                # Prescription list & AI generator
+│   │   ├── reports/                      # Medical report list & upload form
+│   │   └── vitals/                       # Vital signs telemetry & metrics
 │   └── api/
-│       ├── auth/
-│       │   └── [...nextauth]/
-│       │       └── route.ts          # NextAuth handler
-│       ├── patients/
-│       │   └── route.ts              # Patient API
-│       ├── prescriptions/
-│       │   └── route.ts              # Prescription API
-│       ├── reports/
-│       │   ├── upload/
-│       │   │   └── route.ts          # Upload to Cloudinary
-│       │   ├── analyze/
-│       │   │   └── route.ts          # AI analysis
-│       │   └── [id]/
-│       │       └── download/
-│       │           └── route.ts      # Signed download URL
-│       ├── chatbot/
-│       │   └── route.ts              # Chatbot API
-│       └── vitals/
-│           └── route.ts              # Vitals API
+│       ├── assignments/                  # Doctor-patient assignment CRUD
+│       ├── auth/                         # User sync & signout handlers
+│       ├── chatbot/                      # AI chatbot inference endpoint
+│       ├── notifications/                # Real-time alert handlers
+│       ├── patients/                     # Patient records CRUD
+│       ├── prescriptions/                # Prescriptions CRUD & AI generator
+│       ├── reports/                      # Document upload & signed download URLs
+│       ├── stats/                        # Dashboard operational metrics
+│       ├── users/                        # Administrative user provisioning & invites
+│       └── vitals/                       # Patient vitals telemetry
 ├── components/
-│   ├── landing/                      # Landing page components
-│   │   ├── Navigation.tsx
-│   │   ├── Hero.tsx
-│   │   ├── Stats.tsx
-│   │   ├── Services.tsx
-│   │   ├── FeatureAbout.tsx
-│   │   ├── Specialists.tsx
-│   │   ├── CTA.tsx
-│   │   └── Footer.tsx
-│   ├── dashboard/                    # Dashboard components
-│   │   ├── Sidebar.tsx
-│   │   ├── Header.tsx
-│   │   ├── PatientList.tsx
-│   │   ├── PrescriptionForm.tsx
-│   │   ├── ReportUpload.tsx
-│   │   ├── ChatbotInterface.tsx
-│   │   └── VitalsChart.tsx
-│   └── ui/                           # Reusable UI components
-│       ├── Button.tsx
-│       ├── Card.tsx
-│       └── Input.tsx
+│   ├── landing/                          # Landing page visual components
+│   └── dashboard/                        # Dashboard widgets, tables, modals & charts
 ├── lib/
-│   ├── auth.ts                       # NextAuth configuration
-│   ├── db.ts                         # Database connection
-│   ├── redis.ts                      # Redis client
-│   ├── cloudinary.ts                 # Cloudinary integration
-│   ├── ai/
-│   │   ├── gemini.ts                 # Gemini AI integration
-│   │   └── prompts.ts                # AI prompts
-│   └── utils.ts                      # Utility functions
-├── middleware.ts                     # Route protection
-├── prd.md                            # Product Requirements Document
-└── package.json
+│   ├── db.ts                             # Supabase client helper
+│   ├── gemini.ts                         # Universal AI integration with guardrails
+│   ├── ocr.ts                            # OCR text extraction service
+│   ├── supabase-auth-server.ts           # Server-side user & profile verification
+│   ├── supabase-auth.ts                  # Client-side Supabase auth helper
+│   └── supabase-storage.ts               # Private storage upload & signed URL generator
+├── middleware.ts                         # Session validation, status & RBAC route guards
+├── supabase/
+│   └── migrations/                       # Database schema & security migrations
+├── .env.example                          # Canonical environment configuration template
+└── README.md                             # Project documentation
 ```
 
-## Sections
+---
 
-### Landing Page
-1. **Navigation** - Sticky header with logo and menu
-2. **Hero** - Main value proposition with hero text
-3. **Stats** - Key metrics and statistics
-4. **Services** - Core modules and features
-5. **Feature About** - Technology deep dive
-6. **Specialists** - Team/experts showcase
-7. **CTA** - Final conversion section
-8. **Footer** - Links, newsletter, and legal
+## Getting Started
 
-### Dashboard Features
-1. **Patient Management** - CRUD operations, medical history, search
-2. **AI Prescriptions** - Manual and AI-assisted prescription generation
-3. **Report Analyzer** - Upload and AI-analyze medical reports
-4. **Medical Chatbot** - Safe AI assistant for medical queries
-5. **Vitals Tracking** - Record and visualize patient vital signs
-6. **Admin Panel** - User management, analytics, system settings
+### Prerequisites
+- Node.js 18.17+ or Node.js 20+
+- npm, yarn, or pnpm
+- A Supabase project ([supabase.com](https://supabase.com))
 
-## Authentication & Authorization
+### 1. Installation
+Clone the repository and install dependencies:
+```bash
+git clone https://github.com/PratyushKumar43/Vetalis-Healthcare-Management-System.git
+cd Vetalis-Healthcare-Management-System
+npm install
+```
 
-### User Roles
-- **Admin** - Full system access, user management, analytics
-- **Doctor** - Patient management, prescriptions, reports, chatbot
-- **Patient** - View own records, vitals, reports, limited chatbot access
-
-### Authentication Flow
-1. User signs up with email/password or Google OAuth via Supabase Auth
-2. Email verification & session managed natively by Supabase (`@supabase/ssr`)
-3. Role assignment stored in `public.users` table
-4. Role-based route protection via Next.js middleware
-
-## Environment Variables
-
-Copy the provided `.env.example` to `.env.local` and configure your credentials:
-
+### 2. Environment Configuration
+Copy `.env.example` to `.env.local`:
 ```bash
 cp .env.example .env.local
 ```
 
-Required environment variables:
-
+Fill in your environment credentials:
 ```env
+# Application Base URL
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL="https://your-project-id.supabase.co"
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="your-supabase-publishable-key"
 
-# Storage Configuration (Optional)
-NEXT_PUBLIC_SUPABASE_STORAGE_URL="https://your-project-id.storage.supabase.co/storage/v1/s3"
-SUPABASE_STORAGE_REGION="ap-northeast-1"
+# Supabase Service Role Key (Server-side administrative tasks only)
+SUPABASE_SERVICE_ROLE_KEY="your-supabase-service-role-key"
 
-# Google OAuth Credentials
+# Google OAuth Credentials (Optional)
 GOOGLE_CLIENT_ID="your-google-client-id"
 GOOGLE_CLIENT_SECRET="your-google-client-secret"
 NEXT_PUBLIC_GOOGLE_CLIENT_ID="your-google-client-id"
@@ -232,92 +187,55 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID="your-google-client-id"
 AI_BASE_URL="https://generativelanguage.googleapis.com/v1beta"
 AI_API_KEY="your-ai-api-key"
 AI_MODEL_NAME="gemini-1.5-flash"
-GEMINI_API_KEY="your-gemini-api-key"
 
-# OCR Configuration (Optional for medical report extraction)
-OCR_SPACE_API_KEY="helloworld"
+# OCR Configuration (Optional for medical report text extraction)
+OCR_SPACE_API_KEY="your-ocr-space-api-key"
+OCR_SPACE_API_URL="https://api.ocr.space/parse/image"
 ```
 
-## Database & Storage Setup
+### 3. Database Setup & Migrations
+Run the SQL migration scripts located in `supabase/migrations/` sequentially in your Supabase SQL Editor:
 
-1. Create a Supabase project at [supabase.com](https://supabase.com)
-2. Run the migration SQL in your Supabase SQL Editor:
-   - File: `supabase/migrations/20260812000000_init_schema.sql`
-   - This sets up all tables (`users`, `patients`, `doctors`, `prescriptions`, `vitals`, `medical_reports`, `notifications`), triggers, and the `medical-reports` storage bucket.
-3. Configure Google OAuth in the Supabase Dashboard under Authentication > Providers (optional for social login).
+1. `20260812000000_init_schema.sql` - Core tables (`users`, `patients`, `doctors`, `prescriptions`, `vitals`, `medical_reports`, `notifications`), triggers, and initial storage bucket.
+2. `20261013010000_rbac_and_storage_security.sql` - RBAC security functions (`is_admin`, `is_doctor`, `is_patient`, `is_doctor_assigned`), private bucket policies, and `doctor_patient_assignments` table.
+3. `20261013020000_fix_users_rls_recursion.sql` - High-performance non-recursive RLS policy optimization for `public.users`.
+4. `20261014000000_account_lifecycle_and_invites.sql` - User status column (`invited`, `active`, `deactivated`, `suspended`), `preauthorized_roles` table, and invitation tracking columns.
 
-## AI Integration Setup
-
-1. Get an API key from [Google AI Studio](https://makersuite.google.com/app/apikey) or your preferred OpenAI-compatible provider
-2. Set `AI_API_KEY` (and optionally `AI_BASE_URL` / `AI_MODEL_NAME`) in `.env.local`
-3. Test features using:
+### 4. Running the Development Server
 ```bash
-node scripts/test-all-features.mjs
+npm run dev
 ```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Build for Production
+---
 
+## Production Build & Deployment
+
+### Build Application
+Verify that TypeScript compilation and static page generation complete cleanly:
 ```bash
 npm run build
 npm start
 ```
 
-## Deployment
+### Deploying to Vercel
+1. Push your repository to GitHub.
+2. Import the project into Vercel.
+3. Configure the environment variables from your `.env.local` in the Vercel Project Settings.
+4. Set the Root Directory to `./` and deploy.
 
-### Vercel Deployment
+---
 
-1. Push code to GitHub
-2. Import project to Vercel
-3. Add environment variables
-4. Deploy
+## Security Architecture
 
-### Production Environment Variables
+- **HTTP-Only Cookies**: Authentication sessions are stored in cryptographically signed, secure HTTP-only cookies managed via `@supabase/ssr`.
+- **Row Level Security (RLS)**: Enforced directly at the PostgreSQL layer. Direct database queries cannot bypass role constraints even if an API route is compromised.
+- **Signed Storage URLs**: Medical files are never exposed publicly. Access expires automatically through cryptographically signed URLs.
+- **Input Validation**: Client and server schemas verified using Zod and TypeScript.
+- **Medical Safety Boundaries**: The clinical assistant automatically detects non-medical questions and declines to answer, providing appropriate healthcare disclaimers.
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `AI_API_KEY`
-- `AI_BASE_URL` (optional)
-- `AI_MODEL_NAME` (optional)
-- `GOOGLE_CLIENT_ID` (optional)
-- `GOOGLE_CLIENT_SECRET` (optional)
-
-## API Documentation
-
-### Authentication Endpoints
-- Sign-in / Sign-up handled at `/auth/sign-in` and `/auth/sign-up`
-- Account management at `/account/*` routes
-- User synchronization at `/api/auth/sync-user`
-
-### Patient Endpoints
-- `GET /api/patients` - List patients (with filters)
-- `POST /api/patients` - Create patient
-- `GET /api/patients/[id]` - Get patient details
-- `PUT /api/patients/[id]` - Update patient
-
-### Prescription Endpoints
-- `GET /api/prescriptions` - List prescriptions
-- `POST /api/prescriptions` - Create prescription
-- `POST /api/prescriptions/generate` - Generate AI prescriptions
-
-### Report Endpoints
-- `GET /api/reports/list` - List reports
-- `POST /api/reports/upload` - Upload report to Supabase Storage
-- `GET /api/reports/[id]/download` - Get signed download URL
-
-### Chatbot Endpoints
-- `POST /api/chatbot` - Send message with medical guardrails
-
-## Security Features
-
-- ✅ Role-based access control (RBAC: Admin, Doctor, Patient)
-- ✅ Secure session handling via `@supabase/ssr` cookies
-- ✅ Row Level Security (RLS) policies on database tables
-- ✅ Input validation and error sanitization
-- ✅ Medical safety disclaimers & guardrails on AI generation
-- ✅ Secure file storage with Supabase Storage signed URLs
-- ✅ Private report access with expiration tokens
+---
 
 ## License
 
-MIT
-
+This project is licensed under the MIT License.

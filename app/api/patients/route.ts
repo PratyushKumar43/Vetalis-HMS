@@ -1,14 +1,14 @@
 /**
  * API Route: Get/Create Patients
  * 
- * GET /api/patients - Get list of patients
- * POST /api/patients - Create patient record (after user account is created)
+ * GET /api/patients - Get list of authorized patients
+ * POST /api/patients - Create/update patient record
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/supabase-auth-server";
-import { getAllPatients, getPatientsByDoctor } from "@/lib/db-helpers";
-import { sql } from "@/lib/db";
+import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,58 +17,86 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (user.role as string) || "patient";
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+
+    const userRole = user.role;
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search") || "";
-    const limit = parseInt(searchParams.get("limit") || "100");
-    const offset = parseInt(searchParams.get("offset") || "0");
 
     let patients: any[] = [];
 
-    // Patients can only see themselves
     if (userRole === "patient") {
-      const patient = await sql`
-        SELECT 
-          p.*, 
-          u.name, 
-          u.email, 
-          u.phone, 
-          u.created_at
-        FROM users u
-        LEFT JOIN patients p ON p.id = u.id
-        WHERE u.id = ${user.id}::uuid
-      `;
-      patients = patient;
+      // Patients may only view their own record
+      const { data, error } = await supabase
+        .from("patients")
+        .select("*, users(name, email, phone, created_at, role, status)")
+        .eq("id", user.id);
+
+      if (error) throw error;
+      patients = (data || []).map((p: any) => ({
+        ...p,
+        name: p.users?.name,
+        email: p.users?.email,
+        phone: p.users?.phone,
+        created_at: p.users?.created_at,
+      }));
+    } else if (userRole === "doctor") {
+      // Doctors may only view patients assigned to them
+      const { data: assignments, error: assignErr } = await supabase
+        .from("doctor_patient_assignments")
+        .select("patient_id")
+        .eq("doctor_id", user.id);
+
+      if (assignErr) throw assignErr;
+
+      const assignedIds = (assignments || []).map((a: any) => a.patient_id);
+
+      if (assignedIds.length > 0) {
+        const { data, error } = await supabase
+          .from("patients")
+          .select("*, users(name, email, phone, created_at, role, status)")
+          .in("id", assignedIds);
+
+        if (error) throw error;
+        patients = (data || []).map((p: any) => ({
+          ...p,
+          name: p.users?.name,
+          email: p.users?.email,
+          phone: p.users?.phone,
+          created_at: p.users?.created_at,
+        }));
+      }
+    } else if (userRole === "admin") {
+      // Admins may view all patients
+      const { data, error } = await supabase
+        .from("patients")
+        .select("*, users(name, email, phone, created_at, role, status)")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      patients = (data || []).map((p: any) => ({
+        ...p,
+        name: p.users?.name,
+        email: p.users?.email,
+        phone: p.users?.phone,
+        created_at: p.users?.created_at,
+      }));
     } else {
-      // Doctors and Admins see ALL signed up patients
-      const allPatients = await sql`
-        SELECT 
-          u.id,
-          u.name,
-          u.email,
-          u.phone,
-          u.role,
-          u.created_at,
-          p.date_of_birth,
-          p.gender,
-          p.blood_type,
-          p.emergency_contact,
-          p.medical_history,
-          p.allergies
-        FROM users u
-        LEFT JOIN patients p ON p.id = u.id
-        WHERE u.role = 'patient' OR p.id IS NOT NULL
-        ORDER BY u.created_at DESC
-      `;
-      patients = allPatients;
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Apply search filter if provided
+    // Filter by search query if provided
     let filteredPatients = patients;
     if (search) {
+      const q = search.toLowerCase();
       filteredPatients = patients.filter((p: any) =>
-        p.name?.toLowerCase().includes(search.toLowerCase()) ||
-        p.email?.toLowerCase().includes(search.toLowerCase()) ||
+        p.name?.toLowerCase().includes(q) ||
+        p.email?.toLowerCase().includes(q) ||
         p.phone?.includes(search)
       );
     }
@@ -90,15 +118,11 @@ export async function GET(request: NextRequest) {
       success: true,
       patients: patientsWithAge,
       total: patientsWithAge.length,
-      message: `Found ${patientsWithAge.length} patient(s)`,
     });
   } catch (error: any) {
     console.error("Error fetching patients:", error);
     return NextResponse.json(
-      { 
-        error: "Failed to fetch patients",
-        details: error.message || "Unknown error"
-      },
+      { error: error.message || "Failed to fetch patients" },
       { status: 500 }
     );
   }
@@ -111,77 +135,95 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only doctors and admins can create patient records
-    const userRole = (user.role as string) || "patient";
-    if (userRole === "patient") {
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    if (user.role === "patient") {
       return NextResponse.json(
-        { error: "Forbidden: Only doctors and admins can create patient records" },
+        { error: "Forbidden: Patients cannot create patient accounts" },
         { status: 403 }
       );
     }
 
-    const body = await request.json();
-    const { id, date_of_birth, gender, blood_type, emergency_contact } = body;
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
 
-    if (!id) {
+    const body = await request.json();
+    const {
+      name,
+      email,
+      phone,
+      dateOfBirth,
+      gender,
+      bloodType,
+      emergencyContact,
+      medicalHistory,
+      allergies,
+    } = body;
+
+    if (!email || !name) {
       return NextResponse.json(
-        { error: "Missing required field: id" },
+        { error: "Name and email are required" },
         { status: 400 }
       );
     }
 
-    // Check if patient record already exists
-    const existingPatient = await sql`
-      SELECT id FROM patients WHERE id = ${id}::uuid
-    `;
+    // Check if user already exists
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
 
-    if (existingPatient.length > 0) {
-      // Update existing patient record
-      await sql`
-        UPDATE patients
-        SET 
-          date_of_birth = ${date_of_birth || null},
-          gender = ${gender || null},
-          blood_type = ${blood_type || null},
-          emergency_contact = ${emergency_contact ? JSON.stringify(emergency_contact) : null}::jsonb,
-          updated_at = NOW()
-        WHERE id = ${id}::uuid
-      `;
-    } else {
-      // Create new patient record
-      await sql`
-        INSERT INTO patients (
-          id, 
-          date_of_birth, 
-          gender, 
-          blood_type, 
-          emergency_contact,
-          created_at, 
-          updated_at
-        )
-        VALUES (
-          ${id}::uuid,
-          ${date_of_birth || null},
-          ${gender || null},
-          ${blood_type || null},
-          ${emergency_contact ? JSON.stringify(emergency_contact) : null}::jsonb,
-          NOW(),
-          NOW()
-        )
-      `;
+    let patientId = existingUser?.id;
+
+    if (!patientId) {
+      patientId = crypto.randomUUID();
+      const { error: userErr } = await supabase.from("users").insert({
+        id: patientId,
+        email,
+        name,
+        phone: phone || null,
+        role: "patient",
+        status: "active",
+      });
+
+      if (userErr) throw userErr;
+    }
+
+    // Create or update patients record
+    const { error: patErr } = await supabase.from("patients").upsert({
+      id: patientId,
+      date_of_birth: dateOfBirth || null,
+      gender: gender || null,
+      blood_type: bloodType || null,
+      emergency_contact: emergencyContact || null,
+      medical_history: medicalHistory || [],
+      allergies: allergies || [],
+      updated_at: new Date().toISOString(),
+    });
+
+    if (patErr) throw patErr;
+
+    // If a doctor created this patient, automatically assign doctor to patient
+    if (user.role === "doctor") {
+      await supabase.from("doctor_patient_assignments").upsert({
+        doctor_id: user.id,
+        patient_id: patientId,
+        assigned_by: user.id,
+      });
     }
 
     return NextResponse.json({
       success: true,
-      message: "Patient record created/updated successfully",
+      message: "Patient record saved successfully",
+      patient: { id: patientId, name, email },
     });
   } catch (error: any) {
-    console.error("Error creating patient record:", error);
+    console.error("Error creating patient:", error);
     return NextResponse.json(
-      { 
-        error: "Failed to create patient record",
-        details: error.message || "Unknown error"
-      },
+      { error: error.message || "Failed to save patient" },
       { status: 500 }
     );
   }

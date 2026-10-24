@@ -1,15 +1,14 @@
 /**
- * API Route: Get Prescriptions
+ * API Route: Get & Create Prescriptions
  * 
- * GET /api/prescriptions
- * 
- * Returns list of prescriptions
+ * GET /api/prescriptions - Returns list of authorized prescriptions
+ * POST /api/prescriptions - Creates a new prescription (Doctor assigned to patient, or Admin)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/supabase-auth-server";
-import { getPrescriptionsByPatient, getPrescriptionsByDoctor } from "@/lib/db-helpers";
-import { sql } from "@/lib/db";
+import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,96 +17,87 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (user.role as string) || "patient";
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+
+    const userRole = user.role;
     const searchParams = request.nextUrl.searchParams;
-    const patientId = searchParams.get("patientId");
+    const requestedPatientId = searchParams.get("patientId");
     const status = searchParams.get("status") || "all";
 
-    let prescriptions;
+    let prescriptionsQuery = supabase
+      .from("prescriptions")
+      .select("*, patient:patient_id(users(name, email)), doctor:doctor_id(users(name, email))");
 
     if (userRole === "patient") {
-      // Patients see their own prescriptions
-      prescriptions = await getPrescriptionsByPatient(user.id);
+      // Patients strictly view own prescriptions
+      prescriptionsQuery = prescriptionsQuery.eq("patient_id", user.id);
     } else if (userRole === "doctor") {
-      // Doctors see prescriptions for their patients or all if patientId specified
-      if (patientId) {
-        prescriptions = await getPrescriptionsByPatient(patientId);
+      const { data: assignments } = await supabase
+        .from("doctor_patient_assignments")
+        .select("patient_id")
+        .eq("doctor_id", user.id);
+
+      const assignedPatientIds = (assignments || []).map((a: any) => a.patient_id);
+
+      if (requestedPatientId) {
+        if (!assignedPatientIds.includes(requestedPatientId)) {
+          return NextResponse.json(
+            { error: "Forbidden: You are not assigned to this patient." },
+            { status: 403 }
+          );
+        }
+        prescriptionsQuery = prescriptionsQuery.eq("patient_id", requestedPatientId);
       } else {
-        prescriptions = await getPrescriptionsByDoctor(user.id);
+        if (assignedPatientIds.length === 0) {
+          return NextResponse.json({ success: true, prescriptions: [], total: 0 });
+        }
+        prescriptionsQuery = prescriptionsQuery.in("patient_id", assignedPatientIds);
+      }
+    } else if (userRole === "admin") {
+      if (requestedPatientId) {
+        prescriptionsQuery = prescriptionsQuery.eq("patient_id", requestedPatientId);
       }
     } else {
-      // Admins see all prescriptions
-      if (patientId) {
-        prescriptions = await getPrescriptionsByPatient(patientId);
-      } else {
-        prescriptions = await sql`
-          SELECT p.*, 
-            u1.name as patient_name, u1.email as patient_email,
-            u2.name as doctor_name
-          FROM prescriptions p
-          JOIN users u1 ON p.patient_id = u1.id
-          JOIN users u2 ON p.doctor_id = u2.id
-          ORDER BY p.created_at DESC
-          LIMIT 100
-        `;
-      }
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Format prescriptions with patient/doctor names
-    const formattedPrescriptions = await Promise.all(
-      prescriptions.map(async (prescription: any) => {
-        // Get patient name if not included
-        if (!prescription.patient_name) {
-          const patient = await sql`
-            SELECT name FROM users WHERE id = ${prescription.patient_id}::uuid
-          `;
-          prescription.patient_name = patient[0]?.name || "Unknown";
-        }
-
-        // Get doctor name if not included
-        if (!prescription.doctor_name) {
-          const doctor = await sql`
-            SELECT name FROM users WHERE id = ${prescription.doctor_id}::uuid
-          `;
-          prescription.doctor_name = doctor[0]?.name || "Unknown";
-        }
-
-        // Format medications
-        const medications = Array.isArray(prescription.medications)
-          ? prescription.medications
-          : [];
-
-        return {
-          id: prescription.id,
-          patientName: prescription.patient_name,
-          doctorName: prescription.doctor_name,
-          medications: medications.map((med: any) =>
-            typeof med === "string"
-              ? med
-              : `${med.name} ${med.dosage} - ${med.frequency}`
-          ),
-          status: prescription.status,
-          createdDate: prescription.created_at,
-          aiGenerated: prescription.ai_generated || false,
-        };
-      })
-    );
-
-    // Filter by status if specified
-    let filtered = formattedPrescriptions;
     if (status !== "all") {
-      filtered = formattedPrescriptions.filter((p) => p.status === status);
+      prescriptionsQuery = prescriptionsQuery.eq("status", status);
     }
+
+    prescriptionsQuery = prescriptionsQuery.order("created_at", { ascending: false }).limit(100);
+
+    const { data: rawPrescriptions, error: dbError } = await prescriptionsQuery;
+    if (dbError) throw dbError;
+
+    const formattedPrescriptions = (rawPrescriptions || []).map((p: any) => ({
+      id: p.id,
+      patientId: p.patient_id,
+      doctorId: p.doctor_id,
+      patientName: p.patient?.users?.name || p.patient?.name || "Unknown",
+      patientEmail: p.patient?.users?.email || p.patient?.email,
+      doctorName: p.doctor?.users?.name || p.doctor?.name || "Unknown",
+      medications: Array.isArray(p.medications) ? p.medications : [],
+      status: p.status,
+      notes: p.notes,
+      aiGenerated: p.ai_generated,
+      createdAt: p.created_at,
+    }));
 
     return NextResponse.json({
       success: true,
-      prescriptions: filtered,
-      total: filtered.length,
+      prescriptions: formattedPrescriptions,
+      total: formattedPrescriptions.length,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching prescriptions:", error);
     return NextResponse.json(
-      { error: "Failed to fetch prescriptions" },
+      { error: error.message || "Failed to fetch prescriptions" },
       { status: 500 }
     );
   }
@@ -117,147 +107,75 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getUser();
     if (!user) {
-      console.error("POST /api/prescriptions: Unauthorized - No user");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only doctors and admins can create prescriptions
-    const userRole = (user.role as string) || "patient";
+    if (user.status !== "active") {
+      return NextResponse.json({ error: "Account deactivated" }, { status: 403 });
+    }
+
+    const userRole = user.role;
     if (userRole === "patient") {
-      console.error(`POST /api/prescriptions: Forbidden - User role: ${userRole}`);
       return NextResponse.json(
-        { error: "Forbidden: Only doctors and admins can create prescriptions" },
+        { error: "Forbidden: Patients cannot issue prescriptions." },
         { status: 403 }
       );
     }
 
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+
     const body = await request.json();
-    console.log("POST /api/prescriptions: Request body:", body);
-    const { patientId, medications, notes, aiGenerated } = body;
+    const { patientId, medications, notes, status = "active", aiGenerated = false } = body;
 
-    // Validate required fields
     if (!patientId || !medications || !Array.isArray(medications) || medications.length === 0) {
-      console.error("POST /api/prescriptions: Missing required fields", { patientId, medications });
       return NextResponse.json(
-        { error: "Missing required fields: patientId, medications" },
+        { error: "Patient ID and at least one medication are required." },
         { status: 400 }
       );
     }
 
-    // Validate medications array
-    const validMedications = medications.filter((med: any) => 
-      med.name && med.dosage && med.frequency && med.duration
-    );
+    if (userRole === "doctor") {
+      const { data: assignment } = await supabase
+        .from("doctor_patient_assignments")
+        .select("id")
+        .eq("doctor_id", user.id)
+        .eq("patient_id", patientId)
+        .maybeSingle();
 
-    console.log("POST /api/prescriptions: Valid medications:", validMedications);
-
-    if (validMedications.length === 0) {
-      console.error("POST /api/prescriptions: No valid medications", medications);
-      return NextResponse.json(
-        { error: "At least one valid medication is required (name, dosage, frequency, duration)" },
-        { status: 400 }
-      );
-    }
-
-    // Check if patient exists
-    const patient = await sql`
-      SELECT id FROM patients WHERE id = ${patientId}::uuid
-    `;
-
-    if (patient.length === 0) {
-      console.error(`POST /api/prescriptions: Patient not found: ${patientId}`);
-      return NextResponse.json(
-        { error: "Patient not found" },
-        { status: 404 }
-      );
-    }
-
-    console.log("POST /api/prescriptions: Creating prescription for patient:", patientId, "by doctor:", user.id);
-
-    // Create prescription
-    try {
-      const prescription = await sql`
-        INSERT INTO prescriptions (
-          patient_id,
-          doctor_id,
-          medications,
-          ai_generated,
-          status,
-          notes,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          ${patientId}::uuid,
-          ${user.id}::uuid,
-          ${JSON.stringify(validMedications)}::jsonb,
-          ${aiGenerated || false},
-          'active',
-          ${notes || null},
-          NOW(),
-          NOW()
-        )
-        RETURNING id, created_at
-      `;
-
-      console.log("POST /api/prescriptions: Prescription created successfully:", prescription[0]);
-
-      // Create notification for the patient
-      try {
-        // Get patient name for notification
-        const patientInfo = await sql`
-          SELECT name FROM users WHERE id = ${patientId}::uuid
-        `;
-        const patientName = patientInfo[0]?.name || "Patient";
-
-        // Get doctor name for notification
-        const doctorInfo = await sql`
-          SELECT name FROM users WHERE id = ${user.id}::uuid
-        `;
-        const doctorName = doctorInfo[0]?.name || "Doctor";
-
-        // Create notification
-        await sql`
-          INSERT INTO notifications (user_id, type, title, message, link, created_at)
-          VALUES (
-            ${patientId}::uuid,
-            'prescription',
-            'New Prescription Created',
-            ${`Dr. ${doctorName} has created a new prescription for you with ${validMedications.length} medication(s).`},
-            ${`/dashboard/prescriptions`},
-            NOW()
-          )
-        `;
-        console.log("POST /api/prescriptions: Notification created for patient");
-      } catch (notifError: any) {
-        // Log error but don't fail the prescription creation
-        console.error("POST /api/prescriptions: Failed to create notification:", notifError);
+      if (!assignment) {
+        return NextResponse.json(
+          { error: "Forbidden: You are not assigned to this patient." },
+          { status: 403 }
+        );
       }
-
-      return NextResponse.json({
-        success: true,
-        prescription: {
-          id: prescription[0].id,
-          patientId,
-          doctorId: user.id,
-          medications: validMedications,
-          status: "active",
-          created_at: prescription[0].created_at,
-        },
-      });
-    } catch (dbError: any) {
-      console.error("POST /api/prescriptions: Database error:", dbError);
-      throw dbError;
     }
-  } catch (error: any) {
-    console.error("Error creating prescription:", error);
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from("prescriptions")
+      .insert({
+        patient_id: patientId,
+        doctor_id: userRole === "doctor" ? user.id : (body.doctorId || user.id),
+        medications,
+        status,
+        notes: notes || null,
+        ai_generated: !!aiGenerated,
+      })
+      .select("*")
+      .single();
+
+    if (insertErr) throw insertErr;
+
+    return NextResponse.json({
+      success: true,
+      prescription: inserted,
+      message: "Prescription created successfully",
+    });
+  } catch (err: any) {
+    console.error("Error creating prescription:", err);
     return NextResponse.json(
-      { 
-        error: "Failed to create prescription",
-        details: error.message || "Unknown error"
-      },
+      { error: err.message || "Failed to create prescription" },
       { status: 500 }
     );
   }
 }
-

@@ -9,8 +9,13 @@ export async function extractTextWithOcr(
   fileName: string,
   mimeType: string
 ): Promise<string> {
-  const apiKey = process.env.OCR_SPACE_API_KEY || "helloworld";
-  const endpoint = "https://api.ocr.space/parse/image";
+  const apiKey = process.env.OCR_SPACE_API_KEY;
+  const endpoint = process.env.OCR_SPACE_API_URL || "https://api.ocr.space/parse/image";
+
+  if (!apiKey) {
+    console.warn("OCR_SPACE_API_KEY is not configured in environment variables. Skipping OCR text extraction.");
+    return "";
+  }
 
   try {
     const formData = new FormData();

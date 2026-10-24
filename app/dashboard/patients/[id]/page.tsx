@@ -6,9 +6,10 @@
 
 import { getUser } from "@/lib/supabase-auth-server";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Edit, Download, Calendar, Activity, FileText, Pill, Heart } from "lucide-react";
+import { ArrowLeft, Edit } from "lucide-react";
 import Link from "next/link";
 import PatientDetail from "@/components/dashboard/PatientDetail";
+import { supabase } from "@/lib/db";
 
 export default async function PatientDetailPage({
   params,
@@ -26,10 +27,26 @@ export default async function PatientDetailPage({
     redirect("/dashboard/patients/new");
   }
 
-  // Check permissions - patients can only view their own records
-  const userRole = (user.role as string) || "patient";
+  const userRole = user.role;
+
+  // Check permissions:
+  // Patients may only view their own chart
   if (userRole === "patient" && user.id !== params.id) {
-    redirect("/dashboard");
+    redirect("/patient");
+  }
+
+  // Doctors may only view charts of assigned patients
+  if (userRole === "doctor") {
+    const { data: assignment } = await supabase
+      .from("doctor_patient_assignments")
+      .select("id")
+      .eq("doctor_id", user.id)
+      .eq("patient_id", params.id)
+      .maybeSingle();
+
+    if (!assignment) {
+      redirect("/doctor");
+    }
   }
 
   return (
@@ -39,24 +56,26 @@ export default async function PatientDetailPage({
         <div className="flex items-center gap-4">
           <Link
             href="/dashboard/patients"
-            className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+            className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm"
           >
-            <ArrowLeft className="w-5 h-5 text-slate-600" />
+            <ArrowLeft className="w-4 h-4 text-slate-600" />
           </Link>
           <div>
-            <h1 className="text-3xl font-semibold text-slate-900">Patient Details</h1>
-            <p className="text-slate-600">View and manage patient information</p>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Patient Chart</h1>
+            <p className="text-xs text-slate-500">Confidential medical record and diagnostic timeline</p>
           </div>
         </div>
-        <div className="flex gap-3">
-          <Link
-            href={`/dashboard/patients/${params.id}/edit`}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Edit className="w-4 h-4" />
-            Edit
-          </Link>
-        </div>
+        {userRole !== "patient" && (
+          <div className="flex gap-3">
+            <Link
+              href={`/dashboard/patients/${params.id}/edit`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+            >
+              <Edit className="w-3.5 h-3.5" />
+              Edit Record
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Patient Detail Component */}
@@ -64,4 +83,3 @@ export default async function PatientDetailPage({
     </div>
   );
 }
-

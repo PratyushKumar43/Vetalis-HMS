@@ -1,22 +1,24 @@
 /**
  * Supabase Storage Integration
  * 
- * Secure file upload and signed download URL management using Supabase Storage
+ * Secure file upload and signed download URL management using private Supabase Storage
  */
 
 import { supabase } from "./db";
+import { SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET_NAME = "medical-reports";
 
 /**
- * Upload medical report to Supabase Storage
+ * Upload medical report to private Supabase Storage
  */
 export async function uploadMedicalReport(
   buffer: Buffer,
   patientId: string,
   reportId: string,
   reportType: "lab" | "imaging" | "pathology" | "other",
-  contentType: string = "application/pdf"
+  contentType: string = "application/pdf",
+  customClient?: SupabaseClient
 ): Promise<{
   public_id: string;
   secure_url: string;
@@ -24,9 +26,10 @@ export async function uploadMedicalReport(
   bytes: number;
 }> {
   const filePath = `${patientId}/${reportId}`;
+  const client = customClient || supabase;
 
-  // Upload file buffer to Supabase Storage bucket
-  const { data, error } = await supabase.storage
+  // Upload file buffer to private Supabase Storage bucket
+  const { data, error } = await client.storage
     .from(BUCKET_NAME)
     .upload(filePath, buffer, {
       contentType,
@@ -38,55 +41,56 @@ export async function uploadMedicalReport(
     throw new Error(`Failed to upload file: ${error.message}`);
   }
 
-  // Get public / signed access URL fallback
-  const { data: publicUrlData } = supabase.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(filePath);
-
   const fileFormat = contentType.split("/")[1] || "pdf";
 
+  // Note: Medical bucket is private. We do not generate public URLs.
+  // Downloads must go through /api/reports/[id]/download which returns a signed URL.
   return {
     public_id: filePath,
-    secure_url: publicUrlData.publicUrl,
+    secure_url: `/api/reports/${reportId}/download`,
     format: fileFormat,
     bytes: buffer.byteLength,
   };
 }
 
 /**
- * Generate signed URL for secure file download (default 1 hour expiry)
+ * Generate time-limited signed URL for authorized file download
  */
 export async function generateSignedUrl(
   filePath: string,
-  expiresInSeconds: number = 3600
+  expiresInSeconds: number = 3600,
+  customClient?: SupabaseClient
 ): Promise<string> {
+  const client = customClient || supabase;
+
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await client.storage
       .from(BUCKET_NAME)
       .createSignedUrl(filePath, expiresInSeconds);
 
     if (error || !data?.signedUrl) {
       console.error("Supabase signed URL error:", error);
-      // Fallback to public URL if bucket is public
-      const { data: publicData } = supabase.storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
-      return publicData.publicUrl;
+      throw new Error(error?.message || "Failed to generate signed download URL");
     }
 
     return data.signedUrl;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating signed URL:", error);
-    throw new Error("Failed to generate signed URL");
+    throw new Error(error.message || "Failed to generate signed URL");
   }
 }
 
 /**
  * Delete file from Supabase Storage
  */
-export async function deleteFile(filePath: string): Promise<boolean> {
+export async function deleteFile(
+  filePath: string,
+  customClient?: SupabaseClient
+): Promise<boolean> {
+  const client = customClient || supabase;
+
   try {
-    const { error } = await supabase.storage
+    const { error } = await client.storage
       .from(BUCKET_NAME)
       .remove([filePath]);
     return !error;

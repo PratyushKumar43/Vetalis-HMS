@@ -1,4 +1,5 @@
-# Vetalis - AI-Powered Healthcare Management System
+# Vetalis - HMS
+
 
 A production-grade healthcare management platform featuring strict Role-Based Access Control (RBAC), private medical document storage, and clinical AI assistants. Built with **Next.js 14 (App Router)**, **TypeScript**, **Supabase (@supabase/ssr)**, and **Google Gemini AI**.
 

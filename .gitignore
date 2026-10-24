@@ -130,3 +130,6 @@ Thumbs.db
 .agents/
 skills-lock.json
 .gemini/
+
+.vercel
+.env*
